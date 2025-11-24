@@ -14,6 +14,7 @@ from prompts import (
     RELEVANT_SCHEMA,
     FIND_APPROPRIATE_SCHEMA_PROMPT,
     SQL_AGENT_SYSTEM_PROMPT,
+    NAME_NORMALIZER_SYSTEM_PROMPT,
 )
 
 # ----------------------------------------------------
@@ -75,6 +76,47 @@ def extract_json_object(raw: str) -> str:
 
     # If we can't find anything, just return as-is and let json.loads fail
     return s
+
+def normalize_player_name(question: str) -> Dict[str, Any]:
+    """
+    Use an LLM to normalize any player name in the question to a canonical NFL name.
+
+    Returns a dict:
+      {
+        "original": str | None,
+        "normalized": str | None,
+        "reason": str
+      }
+    """
+    raw = call_llm(
+        system=NAME_NORMALIZER_SYSTEM_PROMPT,
+        user=question,
+        model=MODEL,
+        temperature=0.0,
+    )
+
+    clean = extract_json_object(raw)
+
+    try:
+        data = json.loads(clean)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Name normalizer did not return valid JSON.\n"
+            f"Raw response:\n{raw}\n\n"
+            f"Extracted candidate JSON:\n{clean}"
+        ) from e
+
+    # Normalize fields and provide defaults
+    original = data.get("original")
+    normalized = data.get("normalized")
+    reason = data.get("reason", "")
+
+    # Ensure keys exist even if model omitted something
+    return {
+        "original": original if isinstance(original, str) or original is None else str(original),
+        "normalized": normalized if isinstance(normalized, str) or normalized is None else str(normalized),
+        "reason": reason if isinstance(reason, str) else str(reason),
+    }
 
 
 # ----------------------------------------------------
@@ -262,12 +304,12 @@ def execute_sql(sql: str) -> Tuple[List[str], List[List[Any]]]:
 # ----------------------------------------------------
 
 def _print_progress(step: int, max_steps: int, action: str, thought: str | None = None) -> None:
-    bar_len = 100
+    bar_len = 20
     filled = int(bar_len * step / max_steps)
     bar = "[" + "#" * filled + "-" * (bar_len - filled) + "]"
     suffix = f" {action}"
     if thought:
-        suffix += f" – {thought[:80]}"
+        suffix += f" – {thought[:min(len(thought), 100)]}"
     print(f"{bar} Step {step}/{max_steps}{suffix}")
 
 
@@ -294,6 +336,9 @@ def run_sql_agent(
         "history": [ ... step dicts ... ]
       }
     """
+    # 1) Name normalization step
+    name_norm = normalize_player_name(question)
+
     schema_selection = choose_schema_for_query(question)
     reduced_schema_str = build_reduced_schema(schema_selection)
     reduced_schema_obj = json.loads(reduced_schema_str)
@@ -305,6 +350,7 @@ def run_sql_agent(
             "question": question,
             "schema": reduced_schema_obj,
             "history": history,
+            "name_normalization": name_norm,  # NEW
         }
 
         system_prompt = SQL_AGENT_SYSTEM_PROMPT.replace("{{SCHEMA}}", reduced_schema_str)
@@ -342,6 +388,7 @@ def run_sql_agent(
             return {
                 "final_answer": final_answer,
                 "history": history,
+                "name_normalization": name_norm
             }
 
         if action == "CALL_SQL":
@@ -389,6 +436,7 @@ def run_sql_agent(
     return {
         "final_answer": "I was not able to confidently answer this question within the step limit.",
         "history": history,
+        "name_normalization": name_norm
     }
 
 
@@ -403,14 +451,26 @@ def format_agent_response(result: Dict[str, Any]) -> str:
     """
     final_answer = result.get("final_answer", "")
     history = result.get("history", [])
+    name_norm = result.get("name_normalization", {})
 
     lines: List[str] = []
 
     lines.append("Answer:")
     lines.append(final_answer)
     lines.append("")
-    lines.append("Steps taken:")
 
+    if name_norm:
+        orig = name_norm.get("original")
+        norm = name_norm.get("normalized")
+        reason = name_norm.get("reason")
+        lines.append("Name normalization:")
+        lines.append(f"  original:   {orig!r}")
+        lines.append(f"  normalized: {norm!r}")
+        if reason:
+            lines.append(f"  reason:     {reason}")
+        lines.append("")
+
+    lines.append("Steps taken:")
     if not history:
         lines.append("  (No SQL steps were executed.)")
         return "\n".join(lines)
@@ -449,7 +509,7 @@ def format_agent_response(result: Dict[str, Any]) -> str:
 
 
 def main():
-    example_query = "How many passing touchdowns did Thomas Edward Patrick Brady throw in the 2017 postseason?"
+    example_query = "How many passing touchdowns did TB12 throw in the 2017 postseason?"
 
     result = run_sql_agent(example_query, max_steps=10, show_progress=True)
     pretty = format_agent_response(result)

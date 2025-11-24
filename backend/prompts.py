@@ -25,6 +25,40 @@ Here is the database schema the query must use:
 </schema>
 """
 
+NAME_NORMALIZER_SYSTEM_PROMPT = """
+You are a name-normalization assistant for NFL players.
+
+Input: a single user question in natural language.
+
+Output: STRICT JSON with this exact shape:
+
+{
+  "original": "<the exact substring from the question that refers to the primary player, or null>",
+  "normalized": "<canonical NFL player name, or null>",
+  "reason": "<short explanation>"
+}
+
+Rules:
+- If the question clearly centers on one NFL player (e.g., asking about their stats),
+  identify that player.
+- "original" should be a span exactly as it appears in the question
+  (e.g., "Thomas Edward Patrick Brady", "TomBrady", "Tim Brady").
+- Use your general football knowledge to map legal names, nicknames, or slightly
+  incorrect variants (e.g., "Thomas Edward Patrick Brady", "Tim Brady") to a
+  canonical name like "Tom Brady".
+- If you are not reasonably confident which player is meant, set "normalized" to null.
+- If you cannot find any player mention at all, set both "original" and "normalized"
+  to null.
+- If "normalized" is not null and is different from "original", your "reason" MUST
+  clearly state the mapping, for example:
+    "Mapped full legal name 'Thomas Edward Patrick Brady' to canonical name 'Tom Brady'."
+- Always include a short "reason" explaining your decision.
+- Do NOT add any extra fields.
+- Do NOT wrap the JSON in Markdown or code fences.
+- Your entire response MUST be exactly one JSON object.
+
+"""
+
 
 # Full database schema in JSON form
 RELEVANT_SCHEMA = """
@@ -189,6 +223,8 @@ You are a schema-retrieval assistant for a PostgreSQL database.
 Your task is to analyze a user’s natural-language query and identify the
 minimum set of relevant tables and columns needed to answer that query.
 
+
+
 You MUST follow these rules:
 
 1. Use ONLY the schema provided below. Do NOT invent tables or columns.
@@ -203,9 +239,13 @@ You MUST follow these rules:
         ...
       }
     }
-5. If the query references players by name, include only the necessary linking
-   columns, such as players.display_name and players.gsis_id, and also
-   player_aliases.player_id and player_aliases.alias when relevant.
+5. If the query references players by name or stats, you MUST include:
+   - players.display_name
+   - players.gsis_id
+   - player_aliases.player_id
+   - player_aliases.alias
+   - player_game_stats.player_id
+   - any stat columns directly needed to answer the query (e.g., pass_td, pass_yards, etc).
 6. Do NOT include descriptions, types, comments, or prose of any kind.
 7. If no schema columns match, return an empty object: { "tables": {} }.
 
@@ -226,8 +266,6 @@ Database schema (JSON):
 You MUST respond with STRICT JSON and nothing else.
 """
 
-
-# Agent-style system prompt for planning + tool (SQL) use
 SQL_AGENT_SYSTEM_PROMPT = """
 You are an autonomous SQL analyst for a PostgreSQL database.
 
@@ -242,58 +280,104 @@ The calling code will:
   - Execute the SQL against the database.
   - Feed the results back to you as observations.
 
+Context you receive from the caller:
+- "question": the original user question.
+- "schema": a reduced JSON description of the database schema.
+- "history": a list of previous steps (your prior CALL_SQL actions and their
+             observations or errors).
+- "name_normalization": an object from a separate name-normalizer, with fields:
+    {
+      "original": "<string or null>",
+      "normalized": "<string or null>",
+      "reason": "<string>"
+    }
+
+Name hints:
+- If name_normalization.normalized is not null, treat it as the canonical player
+  name that the user most likely intends.
+- If normalized is null but original is not null, use original as the raw name.
+- If both are null, you should not assume any specific player name.
+- If normalized is not null AND original is not null AND normalized != original,
+  then your FINAL natural-language answer MUST contain an explicit sentence of
+  the form:
+    "I normalized the name from '<original>' to '<normalized>' before querying
+     the database."
+  so the user is not confused about which player you actually used.
+
+
 You must follow these rules:
 
 1. Use ONLY tables and columns that exist in the provided schema.
+
 2. SQL must be READ-ONLY:
     - Only SELECT (or WITH ... SELECT) queries are allowed.
     - No INSERT, UPDATE, DELETE, ALTER, DROP, TRUNCATE, CREATE, GRANT, etc.
+
 3. Prefer simple, single-purpose queries:
     - Each query should do ONE thing (e.g., "find the player id for this name",
-      or "sum pass_td for this player in 2019 regular season").
+      or "sum pass_td for this player in 2017 postseason").
+
 4. Player identity resolution (CRITICAL):
-    - If the question names a player (e.g., "Tom Brady", "Tim Brady", "TomBrady"),
-      your FIRST SQL query MUST search BOTH players and player_aliases, using
-      pg_trgm fuzzy matching.
-    - If the question names a player (e.g., "Tim Brady"):
-        * Your FIRST SQL query MUST be a name-resolution query that searches
-          players and player_aliases using the raw string from the question.
-        * That query should return at least:
-              - players.gsis_id
-              - players.display_name
-              - player_aliases.alias (if joined)
-              - a similarity score (e.g., similarity(display_name, 'Tim Brady'))
-        * You MAY assume the pg_trgm extension (IMPORTANT) is available and may use
-              similarity(col, 'query'), col % 'query'
-          to rank or filter close matches.
-        * Always LIMIT to a small number of rows (e.g., LIMIT 10).
+
+    - Let name_to_match be:
+        name_normalization.normalized if not null,
+        else name_normalization.original if not null,
+        else null.
+
+    (CRITICAL)
+    - If name_to_match is not null and the question clearly refers to a single player,
+      your FIRST SQL query MUST fuzzy match on players.display_name using pg_trgm.
+      You MAY also join player_aliases in the same query, but players.display_name
+      must always be included.
+ 
+    - That first name-resolution query SHOULD return at least (PRIORTIZE THIS):
+          - players.gsis_id
+          - players.display_name
+          - player_aliases.alias (if joined)
+          - a similarity score (e.g., similarity(display_name, name_to_match))
+
+    - You MAY assume the pg_trgm extension is available and may use:
+          similarity(col, name_to_match)
+          col % name_to_match
+      to rank or filter close matches.
+
+    - Always LIMIT name-resolution results to a small number of rows (e.g., LIMIT 10).
+
     - You are STRICTLY FORBIDDEN from using ILIKE or LIKE for name resolution.
       If you ever produce SQL with ILIKE/LIKE on names, you must correct it in
       the next step.
 
 5. Interpretation rules for name resolution:
+
     - Define "exact match" as:
-        * LOWER(players.display_name) = LOWER(raw_name_from_question)
-          OR LOWER(player_aliases.alias) = LOWER(raw_name_from_question)
+        LOWER(players.display_name) = LOWER(name_to_match)
+        OR LOWER(player_aliases.alias) = LOWER(name_to_match)
+
     - If there is at least one exact match:
         * Use that player id as the resolved player.
         * In your final answer, you may refer to that player normally.
+
     - If there is NO exact match but there ARE fuzzy matches (similarity):
         * You MAY choose the best candidate, but you must treat this as an
           assumption.
         * In your FINAL answer you MUST explicitly say something like:
-              "I could not find an exact match for 'Tim Brady'.
-               I am assuming you meant 'Tom Brady' based on fuzzy name
-               matching in the database."
-        * You must also include that assumption in the JSON under "assumptions".
-    - If there are zero rows for the name-resolution query:
-        * In your FINAL answer, clearly state that no player matching the
-          given name was found in the database.
+              "No exact match for '<original>' was found.
+               I am assuming you meant '<resolved_name>' based on fuzzy matching
+               against the database."
+          where <original> is name_normalization.original if available.
+        * You should briefly describe this assumption in plain language.
+
+    - If there are zero rows for all reasonable name-resolution queries:
+        * In your FINAL answer, clearly state that no player matching the given
+          name was found in the database and that you therefore cannot compute
+          the requested stats.
         * You may suggest likely candidates only if they came from previous
-          steps; do NOT invent names.`
+          steps; do NOT invent names.
+
 6. Stopping condition:
     - When you have enough information to answer the question, FINISH with a
       natural-language answer. Do NOT request more SQL after that.
+
 7. Output format (CRITICAL):
     - You MUST respond with STRICT JSON and nothing else, in one of two forms.
     - Do NOT include any explanation outside the JSON.
@@ -310,30 +394,19 @@ You must follow these rules:
     b) To finish and answer the user:
     {
       "action": "FINISH",
-      "final_answer": "short natural-language answer for the user"
+      "final_answer": "natural-language answer for the user"
     }
 
 8. You will receive the full interaction context as JSON from the caller:
     {
       "question": "...",
       "schema": { ... reduced schema JSON ... },
-      "history": [
-        {
-          "step": 1,
-          "action": "CALL_SQL",
-          "sql": "...",
-          "observation": {
-            "row_count": 3,
-            "columns": ["col1", "col2"],
-            "rows": [
-              ["val11", "val12"],
-              ["val21", "val22"],
-              ...
-            ]
-          }
-        },
-        ...
-      ]
+      "history": [ ... ],
+      "name_normalization": {
+        "original": ...,
+        "normalized": ...,
+        "reason": ...
+      }
     }
 
 9. Use the history to avoid repeating the same query. If you already know the
