@@ -2,9 +2,10 @@ import nflreadpy as nfl
 from dotenv import load_dotenv, find_dotenv
 import os
 from supabase import Client, create_client
-from utils.nfl_stats_transformers import to_player_game_stats, to_team_game_stats
+import utils
 import polars as pl
 from typing import Dict, List, Any
+from tqdm import tqdm
 
 FLAG = True
 
@@ -19,7 +20,6 @@ def _extract_team_id_abbrev(supabase: Client) -> Dict[str, int]:
     teams_res = supabase.table("teams").select("id, team_abbr").execute()
     abbr_to_id = {t["team_abbr"]: t["id"] for t in teams_res.data}
     return abbr_to_id
-
 
 def _extract_needed_player_info(row):
     return {
@@ -57,24 +57,25 @@ def _extract_needed_player_info(row):
 def load_player_info_into_db():
     supabase: Client = init_load_dotenv()
     abbr_to_id = _extract_team_id_abbrev(supabase)
-
+    players = nfl.load_players()
+    allowed_players = utils.player_whitelist.generate_player_whitelist(players)
     try:
-        players = nfl.load_players()
         for row in players.iter_rows(named=True):
-            if FLAG and row["gsis_id"] == "00-0019596":
-                needed_player_info = _extract_needed_player_info(row)
-                # get draft_team_id and latest_team_id and convert from ABBREV to id
-                draft_abbr = needed_player_info["draft_team_id"]
-                latest_abbr = needed_player_info["latest_team_id"]
+            if row["gsis_id"] not in allowed_players:
+                continue
+            needed_player_info = _extract_needed_player_info(row)
+            # get draft_team_id and latest_team_id and convert from ABBREV to id
+            draft_abbr = needed_player_info["draft_team_id"]
+            latest_abbr = needed_player_info["latest_team_id"]
 
-                # 2) Handle None / missing teams safely
-                needed_player_info["draft_team_id"] = abbr_to_id.get(draft_abbr) if draft_abbr else None
-                needed_player_info["latest_team_id"] = abbr_to_id.get(latest_abbr) if latest_abbr else None
+            # 2) Handle None / missing teams safely
+            needed_player_info["draft_team_id"] = abbr_to_id.get(draft_abbr) if draft_abbr else None
+            needed_player_info["latest_team_id"] = abbr_to_id.get(latest_abbr) if latest_abbr else None
 
-                try:
-                    supabase.table("players").upsert(needed_player_info).execute()
-                except Exception as e:
-                    continue
+            try:
+                supabase.table("players").upsert(needed_player_info).execute()
+            except Exception as e:
+                continue
         print("✓ Players table loaded successfully")
     except Exception as e:
         print(f"✗ Error loading players table: {e}")
@@ -116,17 +117,17 @@ def load_player_game_stats_into_db(pbp: pl.DataFrame, player_stats: pl.DataFrame
     abbr_to_id = _extract_team_id_abbrev(supabase)
     try:
         rows = supabase.table("players").select("*").execute().data
-        print(rows)
-        for row in rows:
-            player_week_stats: List[Dict[str, Any]] = to_player_game_stats(row["gsis_id"], pbp, player_stats)
+        for row in tqdm(rows):
+            player_week_stats: List[Dict[str, Any]] = utils.nfl_stats_transformers.to_player_game_stats(row["gsis_id"], pbp, player_stats)
+            if not player_week_stats:
+                continue
             for idx, game in enumerate(player_week_stats):
                 player_week_stats[idx]["team_id"] = abbr_to_id.get(game["team_id"])
                 player_week_stats[idx]["opponent_team_id"] = abbr_to_id.get(game["opponent_team_id"])
             try:
-                supabase.table("player_game_stats").upsert(player_week_stats).execute()
+                supabase.table("player_game_stats").upsert(player_week_stats, on_conflict="player_id,game_id").execute()
             except Exception as e:
-                print(e)
-                raise 
+                print(row["gsis_id"], row["display_name"],e)
         print("✓ Player Game Stats table loaded successfully")
     except Exception as e:
         print(f"✗ Error loading players game stats table: {e}")
@@ -136,12 +137,10 @@ def load_player_game_stats_into_db(pbp: pl.DataFrame, player_stats: pl.DataFrame
 def main():
     # load_player_info_into_db()
 
-    # pbp: pl.DataFrame = nfl.load_pbp(list(range(2000, 2025)))
-    # player_stats: pl.DataFrame = nfl.load_player_stats(list(range(2000, 2025)))
-    # team_stats: pl.DataFrame = nfl.load_team_stats(seasons=True)
-    # print("✓ PBP + Player Game + Team Stats tables loaded successfully")
-    # # load_player_game_stats_into_db(pbp, player_stats)
-    pass
+    pbp: pl.DataFrame = nfl.load_pbp(list(range(2000, 2025)))
+    player_stats: pl.DataFrame = nfl.load_player_stats(list(range(2000, 2025)))
+    print("✓ PBP + Player Game + Team Stats tables loaded successfully")
+    load_player_game_stats_into_db(pbp, player_stats)
 
 if __name__ == "__main__":
     main()

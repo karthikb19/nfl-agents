@@ -1,10 +1,11 @@
 import nflreadpy as nfl
 
 def main():
-    players = nfl.load_players()
-    s = set()
-    for player in players.iter_rows(named=True):
-        s.add(player["gsis_id"])
-    print(len(s) == len(players))
+    rosters = nfl.load_rosters()
+    print(len(rosters))
+    # for roster in rosters.iter_rows(named=True):
+    #     print(roster)
+
+
 if __name__ == "__main__":
     main()

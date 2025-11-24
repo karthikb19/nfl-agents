@@ -509,9 +509,9 @@ def format_agent_response(result: Dict[str, Any]) -> str:
 
 
 def main():
-    example_query = "How many passing touchdowns did TB12 throw in the 2017 postseason?"
+    example_query = "is josh allen better rusher than mahomes? by how much?"
 
-    result = run_sql_agent(example_query, max_steps=10, show_progress=True)
+    result = run_sql_agent(example_query, max_steps=15, show_progress=True)
     pretty = format_agent_response(result)
     print()
     print(pretty)
