@@ -122,12 +122,6 @@ def load_player_game_stats_into_db(pbp: pl.DataFrame, player_stats: pl.DataFrame
             for idx, game in enumerate(player_week_stats):
                 player_week_stats[idx]["team_id"] = abbr_to_id.get(game["team_id"])
                 player_week_stats[idx]["opponent_team_id"] = abbr_to_id.get(game["opponent_team_id"])
-            print(player_week_stats)
-            for idx, game in enumerate(player_week_stats):
-                for k, v in game.items():
-                    if type(v) == str and v == "0.00":
-                        print(k)
-                        exit(0)
             try:
                 supabase.table("player_game_stats").upsert(player_week_stats).execute()
             except Exception as e:
