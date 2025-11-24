@@ -169,7 +169,7 @@ def to_player_game_stats(
                 else:
                     team_targets = None
                 team_air_yards = (
-                    float(team_pass_plays["air_yards"].drop_nulls().sum())
+                    int(team_pass_plays["air_yards"].drop_nulls().sum())
                     if "air_yards" in team_pass_plays.columns
                     else None
                 )

@@ -5,12 +5,6 @@ This script demonstrates that the functions moved to utils/nfl_stats_transformer
 still work as expected by importing and running sample outputs.
 """
 
-import sys
-from pathlib import Path
-
-# Add parent directory to path so we can import from utils
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 import nflreadpy as nfl
 import polars as pl
 from utils.nfl_stats_transformers import to_player_game_stats, to_team_game_stats
@@ -74,7 +68,10 @@ def sample_player_game_stats(pbp: pl.DataFrame, player_stats: pl.DataFrame):
     """
     tom_brady_id = "00-0019596"
     tom_brady_stats = to_player_game_stats(tom_brady_id, pbp, player_stats)
+    for k, v in tom_brady_stats[0].items():
+        print(v, type(v))
     
+    print(tom_brady_stats[0]["player_id"]) 
     print(f"\nTom Brady game stats count: {len(tom_brady_stats)}")
     print(f"Seasons covered: {min(r['season'] for r in tom_brady_stats)} - {max(r['season'] for r in tom_brady_stats)}")
     
