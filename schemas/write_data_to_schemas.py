@@ -133,14 +133,31 @@ def load_player_game_stats_into_db(pbp: pl.DataFrame, player_stats: pl.DataFrame
         print(f"✗ Error loading players game stats table: {e}")
         raise
 
+def load_team_game_stats_into_db(pbp: pl.DataFrame, team_stats: pl.DataFrame):
+    supabase: Client = init_load_dotenv()
+    abbr_to_id = _extract_team_id_abbrev(supabase)
+    for row in tqdm(team_stats.iter_rows(named=True)):
+        team_week_stats: List[Dict[str, Any]] = utils.nfl_stats_transformers.to_team_game_stats(row["team_abbr"], pbp, team_stats)
+        if not team_week_stats:
+            continue
+        for idx, game in enumerate(team_week_stats):
+            team_week_stats[idx]["team_id"] = abbr_to_id.get(game["team_id"])
+            team_week_stats[idx]["opponent_team_id"] = abbr_to_id.get(game["opponent_team_id"])
+        try:
+            supabase.table("team_game_stats").upsert(team_week_stats, on_conflict="team_id,game_id").execute()
+        except Exception as e:
+            print(row["team_abbr"], row["team_name"],e)
+    print("✓ Team Game Stats table loaded successfully")
 
 def main():
     # load_player_info_into_db()
-
     pbp: pl.DataFrame = nfl.load_pbp(list(range(2000, 2025)))
-    player_stats: pl.DataFrame = nfl.load_player_stats(list(range(2000, 2025)))
-    print("✓ PBP + Player Game + Team Stats tables loaded successfully")
-    load_player_game_stats_into_db(pbp, player_stats)
+    team_stats: pl.DataFrame = nfl.load_team_stats(seasons=True)
+
+    # player_stats: pl.DataFrame = nfl.load_player_stats(list(range(2000, 2025)))
+    # print("✓ PBP + Player Game + Team Stats tables loaded successfully")
+    # load_player_game_stats_into_db(pbp, player_stats)
+    
 
 if __name__ == "__main__":
     main()

@@ -200,10 +200,8 @@ def create_player_game_stats_table():
 
             season          SMALLINT NOT NULL,
             week            SMALLINT NOT NULL,
-            team_id         TEXT,   -- team abbrev; later map to teams table PK
-            opponent_team_id TEXT,
-            home_away       TEXT CHECK (home_away IN ('HOME', 'AWAY')),
-            game_type       TEXT CHECK (game_type IN ('REG', 'POST', 'PRE')),
+            team_id         INTEGER REFERENCES teams(id),
+            opponent_team_id INTEGER REFERENCES teams(id),
 
             snaps_offense       INTEGER,
             snaps_offense_pct   DOUBLE PRECISION,
@@ -281,6 +279,39 @@ def create_player_game_stats_table():
         cursor.close()
         conn.close()
 
+def create_team_game_stats_table():
+    load_dotenv(find_dotenv())
+    db_url = os.getenv('SUPABASE_DB_URL')
+    
+    if not db_url:
+        raise ValueError("SUPABASE_DB_URL not found in environment variables")
+    
+    if '?pgbouncer=' in db_url:
+        db_url = db_url.split('?pgbouncer=')[0]
+    
+    conn = psycopg2.connect(db_url)
+    cursor = conn.cursor()
+    
+    try:
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS team_game_stats (
+        );
+        """
+        
+        cursor.execute(create_table_query)
+        conn.commit()
+        
+        print("✓ Team game stats table created successfully (or already exists)")
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"✗ Error creating team game stats table: {e}")
+        raise
+    
+    finally:
+        cursor.close()
+        conn.close()
+
 def main():
     load_dotenv(find_dotenv())
     
@@ -288,6 +319,7 @@ def main():
     create_players_table()   
     create_player_aliases_table()
     create_player_game_stats_table()
+    create_team_game_stats_table()
 
 if __name__ == "__main__":
     main()
