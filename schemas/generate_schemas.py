@@ -202,6 +202,8 @@ def create_player_game_stats_table():
             week            SMALLINT NOT NULL,
             team_id         INTEGER REFERENCES teams(id),
             opponent_team_id INTEGER REFERENCES teams(id),
+            home_away       TEXT CHECK (home_away IN ('HOME', 'AWAY')),
+            game_type       TEXT CHECK (game_type IN ('REG', 'POST', 'PRE')),
 
             snaps_offense       INTEGER,
             snaps_offense_pct   DOUBLE PRECISION,
@@ -295,6 +297,170 @@ def create_team_game_stats_table():
     try:
         create_table_query = """
         CREATE TABLE IF NOT EXISTS team_game_stats (
+            id                  BIGSERIAL PRIMARY KEY,
+
+            -- nflreadpy / nflfastR game id (same as player_game_stats)
+            game_id             TEXT,
+
+            season              SMALLINT NOT NULL,
+            week                SMALLINT NOT NULL,
+            game_type           TEXT CHECK (game_type IN ('REG', 'POST', 'PRE')),
+
+            team_id             INTEGER NOT NULL REFERENCES teams(id),
+            opponent_team_id    INTEGER REFERENCES teams(id),
+            home_away           TEXT CHECK (home_away IN ('HOME', 'AWAY')),
+
+            -- Result / scoreboard
+            points_for          INTEGER,
+            points_against      INTEGER,
+            point_diff          INTEGER,
+            result              TEXT CHECK (result IN ('W', 'L', 'T')),
+
+            -- Pace / volume
+            total_plays         INTEGER,
+            total_drives        INTEGER,
+            time_of_possession  INTERVAL,
+
+            -- Passing offense
+            completions                 INTEGER NOT NULL DEFAULT 0,
+            attempts                    INTEGER NOT NULL DEFAULT 0,
+            passing_yards               INTEGER NOT NULL DEFAULT 0,
+            passing_tds                 INTEGER NOT NULL DEFAULT 0,
+            passing_interceptions       INTEGER NOT NULL DEFAULT 0,
+            sacks_suffered              INTEGER NOT NULL DEFAULT 0,
+            sack_yards_lost             INTEGER NOT NULL DEFAULT 0,
+            sack_fumbles                INTEGER NOT NULL DEFAULT 0,
+            sack_fumbles_lost           INTEGER NOT NULL DEFAULT 0,
+            passing_air_yards           INTEGER NOT NULL DEFAULT 0,
+            passing_yards_after_catch   INTEGER NOT NULL DEFAULT 0,
+            passing_first_downs         INTEGER NOT NULL DEFAULT 0,
+            passing_epa                 DOUBLE PRECISION,
+            passing_cpoe                DOUBLE PRECISION,
+            passing_2pt_conversions     INTEGER NOT NULL DEFAULT 0,
+
+            -- Derived passing efficiency
+            pass_yards_per_att          DOUBLE PRECISION,
+            pass_epa_per_play           DOUBLE PRECISION,
+            pass_success_rate           DOUBLE PRECISION,
+            dropbacks                   INTEGER,
+            neutral_pass_rate           DOUBLE PRECISION,
+
+            -- Rushing offense
+            carries                     INTEGER NOT NULL DEFAULT 0,
+            rushing_yards               INTEGER NOT NULL DEFAULT 0,
+            rushing_tds                 INTEGER NOT NULL DEFAULT 0,
+            rushing_fumbles             INTEGER NOT NULL DEFAULT 0,
+            rushing_fumbles_lost        INTEGER NOT NULL DEFAULT 0,
+            rushing_first_downs         INTEGER NOT NULL DEFAULT 0,
+            rushing_epa                 DOUBLE PRECISION,
+            rushing_2pt_conversions     INTEGER NOT NULL DEFAULT 0,
+
+            -- Derived rushing efficiency
+            rush_yards_per_carry        DOUBLE PRECISION,
+            rush_epa_per_carry          DOUBLE PRECISION,
+            rush_success_rate           DOUBLE PRECISION,
+
+            -- Receiving offense
+            receptions                  INTEGER NOT NULL DEFAULT 0,
+            targets                     INTEGER NOT NULL DEFAULT 0,
+            receiving_yards             INTEGER NOT NULL DEFAULT 0,
+            receiving_tds               INTEGER NOT NULL DEFAULT 0,
+            receiving_fumbles           INTEGER NOT NULL DEFAULT 0,
+            receiving_fumbles_lost      INTEGER NOT NULL DEFAULT 0,
+            receiving_air_yards         INTEGER NOT NULL DEFAULT 0,
+            receiving_yards_after_catch INTEGER NOT NULL DEFAULT 0,
+            receiving_first_downs       INTEGER NOT NULL DEFAULT 0,
+            receiving_epa               DOUBLE PRECISION,
+            receiving_2pt_conversions   INTEGER NOT NULL DEFAULT 0,
+
+            -- Defense
+            def_tackles_solo            INTEGER NOT NULL DEFAULT 0,
+            def_tackles_with_assist     INTEGER NOT NULL DEFAULT 0,
+            def_tackle_assists          INTEGER NOT NULL DEFAULT 0,
+            def_tackles_for_loss        INTEGER NOT NULL DEFAULT 0,
+            def_tackles_for_loss_yards  INTEGER NOT NULL DEFAULT 0,
+            def_fumbles_forced          INTEGER NOT NULL DEFAULT 0,
+            def_sacks                   DOUBLE PRECISION,
+            def_sack_yards              INTEGER NOT NULL DEFAULT 0,
+            def_qb_hits                 INTEGER NOT NULL DEFAULT 0,
+            def_interceptions           INTEGER NOT NULL DEFAULT 0,
+            def_interception_yards      INTEGER NOT NULL DEFAULT 0,
+            def_pass_defended           INTEGER NOT NULL DEFAULT 0,
+            def_tds                     INTEGER NOT NULL DEFAULT 0,
+            def_fumbles                 INTEGER NOT NULL DEFAULT 0,
+            def_safeties                INTEGER NOT NULL DEFAULT 0,
+
+            defense_epa_total           DOUBLE PRECISION,
+            defense_epa_per_play        DOUBLE PRECISION,
+
+            -- Fumbles / misc
+            misc_yards                  INTEGER NOT NULL DEFAULT 0,
+            fumble_recovery_own         INTEGER NOT NULL DEFAULT 0,
+            fumble_recovery_yards_own   INTEGER NOT NULL DEFAULT 0,
+            fumble_recovery_opp         INTEGER NOT NULL DEFAULT 0,
+            fumble_recovery_yards_opp   INTEGER NOT NULL DEFAULT 0,
+            fumble_recovery_tds         INTEGER NOT NULL DEFAULT 0,
+
+            -- Penalties
+            penalties                   INTEGER NOT NULL DEFAULT 0,
+            penalty_yards               INTEGER NOT NULL DEFAULT 0,
+            timeouts                    INTEGER NOT NULL DEFAULT 0,
+
+            -- Returns / special teams
+            punt_returns                INTEGER NOT NULL DEFAULT 0,
+            punt_return_yards           INTEGER NOT NULL DEFAULT 0,
+            kickoff_returns             INTEGER NOT NULL DEFAULT 0,
+            kickoff_return_yards        INTEGER NOT NULL DEFAULT 0,
+            special_teams_tds           INTEGER NOT NULL DEFAULT 0,
+
+            -- Field goals
+            fg_made                     INTEGER NOT NULL DEFAULT 0,
+            fg_att                      INTEGER NOT NULL DEFAULT 0,
+            fg_missed                   INTEGER NOT NULL DEFAULT 0,
+            fg_blocked                  INTEGER NOT NULL DEFAULT 0,
+            fg_long                     INTEGER,
+            fg_pct                      DOUBLE PRECISION,
+
+            fg_made_0_19                INTEGER NOT NULL DEFAULT 0,
+            fg_made_20_29               INTEGER NOT NULL DEFAULT 0,
+            fg_made_30_39               INTEGER NOT NULL DEFAULT 0,
+            fg_made_40_49               INTEGER NOT NULL DEFAULT 0,
+            fg_made_50_59               INTEGER NOT NULL DEFAULT 0,
+            fg_made_60_                 INTEGER NOT NULL DEFAULT 0,
+
+            fg_missed_0_19              INTEGER NOT NULL DEFAULT 0,
+            fg_missed_20_29             INTEGER NOT NULL DEFAULT 0,
+            fg_missed_30_39             INTEGER NOT NULL DEFAULT 0,
+            fg_missed_40_49             INTEGER NOT NULL DEFAULT 0,
+            fg_missed_50_59             INTEGER NOT NULL DEFAULT 0,
+            fg_missed_60_               INTEGER NOT NULL DEFAULT 0,
+
+            fg_made_list                TEXT,
+            fg_missed_list              TEXT,
+            fg_blocked_list             TEXT,
+            fg_made_distance            TEXT,
+            fg_missed_distance          TEXT,
+            fg_blocked_distance         TEXT,
+
+            -- PATs
+            pat_made                    INTEGER NOT NULL DEFAULT 0,
+            pat_att                     INTEGER NOT NULL DEFAULT 0,
+            pat_missed                  INTEGER NOT NULL DEFAULT 0,
+            pat_blocked                 INTEGER NOT NULL DEFAULT 0,
+            pat_pct                     DOUBLE PRECISION,
+
+            -- Game-winning FG
+            gwfg_made                   INTEGER NOT NULL DEFAULT 0,
+            gwfg_att                    INTEGER NOT NULL DEFAULT 0,
+            gwfg_missed                 INTEGER NOT NULL DEFAULT 0,
+            gwfg_blocked                INTEGER NOT NULL DEFAULT 0,
+            gwfg_distance               INTEGER,
+
+            -- Bookkeeping
+            created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+            -- Avoid dup rows per team/game
+            UNIQUE (team_id, game_id)
         );
         """
         
@@ -314,11 +480,10 @@ def create_team_game_stats_table():
 
 def main():
     load_dotenv(find_dotenv())
-    
-    create_teams_table()
-    create_players_table()   
-    create_player_aliases_table()
-    create_player_game_stats_table()
+    # create_teams_table()
+    # create_players_table()   
+    # create_player_aliases_table()
+    # create_player_game_stats_table()
     create_team_game_stats_table()
 
 if __name__ == "__main__":

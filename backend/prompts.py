@@ -146,7 +146,160 @@ RELEVANT_SCHEMA = """
       ["player_id", "alias"]
     ]
   },
+  "team_game_stats": {
+    "pk": ["id"],
+    "columns": {
+        "id": "BIGSERIAL",
+        "game_id": "TEXT",
+        "season": "SMALLINT",
+        "week": "SMALLINT",
+        "game_type": "TEXT (values: 'REG','POST','PRE')",
+        "team_id": "INTEGER",
+        "opponent_team_id": "INTEGER",
+        "home_away": "TEXT (values: 'HOME','AWAY')",
 
+        "points_for": "INTEGER",
+        "points_against": "INTEGER",
+        "point_diff": "INTEGER",
+        "result": "TEXT (values: 'W','L','T')",
+
+        "total_plays": "INTEGER",
+        "total_drives": "INTEGER",
+        "time_of_possession": "INTERVAL",
+
+        "completions": "INTEGER",
+        "attempts": "INTEGER",
+        "passing_yards": "INTEGER",
+        "passing_tds": "INTEGER",
+        "passing_interceptions": "INTEGER",
+        "sacks_suffered": "INTEGER",
+        "sack_yards_lost": "INTEGER",
+        "sack_fumbles": "INTEGER",
+        "sack_fumbles_lost": "INTEGER",
+        "passing_air_yards": "INTEGER",
+        "passing_yards_after_catch": "INTEGER",
+        "passing_first_downs": "INTEGER",
+        "passing_epa": "DOUBLE PRECISION",
+        "passing_cpoe": "DOUBLE PRECISION",
+        "passing_2pt_conversions": "INTEGER",
+
+        "pass_yards_per_att": "DOUBLE PRECISION",
+        "pass_epa_per_play": "DOUBLE PRECISION",
+        "pass_success_rate": "DOUBLE PRECISION",
+        "dropbacks": "INTEGER",
+        "neutral_pass_rate": "DOUBLE PRECISION",
+
+        "carries": "INTEGER",
+        "rushing_yards": "INTEGER",
+        "rushing_tds": "INTEGER",
+        "rushing_fumbles": "INTEGER",
+        "rushing_fumbles_lost": "INTEGER",
+        "rushing_first_downs": "INTEGER",
+        "rushing_epa": "DOUBLE PRECISION",
+        "rushing_2pt_conversions": "INTEGER",
+
+        "rush_yards_per_carry": "DOUBLE PRECISION",
+        "rush_epa_per_carry": "DOUBLE PRECISION",
+        "rush_success_rate": "DOUBLE PRECISION",
+
+        "receptions": "INTEGER",
+        "targets": "INTEGER",
+        "receiving_yards": "INTEGER",
+        "receiving_tds": "INTEGER",
+        "receiving_fumbles": "INTEGER",
+        "receiving_fumbles_lost": "INTEGER",
+        "receiving_air_yards": "INTEGER",
+        "receiving_yards_after_catch": "INTEGER",
+        "receiving_first_downs": "INTEGER",
+        "receiving_epa": "DOUBLE PRECISION",
+        "receiving_2pt_conversions": "INTEGER",
+
+        "def_tackles_solo": "INTEGER",
+        "def_tackles_with_assist": "INTEGER",
+        "def_tackle_assists": "INTEGER",
+        "def_tackles_for_loss": "INTEGER",
+        "def_tackles_for_loss_yards": "INTEGER",
+        "def_fumbles_forced": "INTEGER",
+        "def_sacks": "DOUBLE PRECISION",
+        "def_sack_yards": "INTEGER",
+        "def_qb_hits": "INTEGER",
+        "def_interceptions": "INTEGER",
+        "def_interception_yards": "INTEGER",
+        "def_pass_defended": "INTEGER",
+        "def_tds": "INTEGER",
+        "def_fumbles": "INTEGER",
+        "def_safeties": "INTEGER",
+
+        "defense_epa_total": "DOUBLE PRECISION",
+        "defense_epa_per_play": "DOUBLE PRECISION",
+
+        "misc_yards": "INTEGER",
+        "fumble_recovery_own": "INTEGER",
+        "fumble_recovery_yards_own": "INTEGER",
+        "fumble_recovery_opp": "INTEGER",
+        "fumble_recovery_yards_opp": "INTEGER",
+        "fumble_recovery_tds": "INTEGER",
+
+        "penalties": "INTEGER",
+        "penalty_yards": "INTEGER",
+        "timeouts": "INTEGER",
+
+        "punt_returns": "INTEGER",
+        "punt_return_yards": "INTEGER",
+        "kickoff_returns": "INTEGER",
+        "kickoff_return_yards": "INTEGER",
+        "special_teams_tds": "INTEGER",
+
+        "fg_made": "INTEGER",
+        "fg_att": "INTEGER",
+        "fg_missed": "INTEGER",
+        "fg_blocked": "INTEGER",
+        "fg_long": "INTEGER",
+        "fg_pct": "DOUBLE PRECISION",
+
+        "fg_made_0_19": "INTEGER",
+        "fg_made_20_29": "INTEGER",
+        "fg_made_30_39": "INTEGER",
+        "fg_made_40_49": "INTEGER",
+        "fg_made_50_59": "INTEGER",
+        "fg_made_60_": "INTEGER",
+
+        "fg_missed_0_19": "INTEGER",
+        "fg_missed_20_29": "INTEGER",
+        "fg_missed_30_39": "INTEGER",
+        "fg_missed_40_49": "INTEGER",
+        "fg_missed_50_59": "INTEGER",
+        "fg_missed_60_": "INTEGER",
+
+        "fg_made_list": "TEXT",
+        "fg_missed_list": "TEXT",
+        "fg_blocked_list": "TEXT",
+        "fg_made_distance": "TEXT",
+        "fg_missed_distance": "TEXT",
+        "fg_blocked_distance": "TEXT",
+
+        "pat_made": "INTEGER",
+        "pat_att": "INTEGER",
+        "pat_missed": "INTEGER",
+        "pat_blocked": "INTEGER",
+        "pat_pct": "DOUBLE PRECISION",
+
+        "gwfg_made": "INTEGER",
+        "gwfg_att": "INTEGER",
+        "gwfg_missed": "INTEGER",
+        "gwfg_blocked": "INTEGER",
+        "gwfg_distance": "INTEGER",
+
+        "created_at": "TIMESTAMPTZ"
+    },
+    "fks": {
+        "team_id": "teams.id",
+        "opponent_team_id": "teams.id"
+    },
+    "unique": [
+        ["team_id", "game_id"]
+    ]
+  },
   "player_game_stats": {
     "pk": ["id"],
     "columns": {
@@ -257,6 +410,18 @@ You MUST understand and use the meaning of the following tables/columns:
     - team_name: full team name (e.g., 'New England Patriots').
     - team_nick: nickname (e.g., 'Patriots').
 
+- Table team_game_stats:
+    - Each row is one team in one game.
+    - Key columns:
+        - team_id: references teams.id.
+        - opponent_team_id: references teams.id.
+        - season: season year (e.g., 2009, 2019).
+        - week: week number within the season.
+        - home_away: 'HOME' or 'AWAY'
+        - game_type: 'REG' (regular season), 'POST' (postseason), 'PRE' (preseason).
+        - pass_yards, pass_td, interceptions, rush_yards, rush_td,
+          rec_yards, rec_td, etc.: per-game stats.
+
 - Relationship between player_game_stats and teams:
     - player_game_stats.team_id and player_game_stats.opponent_team_id store
       team ids that correspond to teams.id.
@@ -308,7 +473,18 @@ You MUST follow these rules:
    - player_game_stats.game_type
    - any stat columns directly needed to answer the query (e.g., pass_td, pass_yards, etc).
 6. Do NOT include descriptions, types, comments, or prose of any kind.
-7. If no schema columns match, return an empty object: { "tables": {} }.
+7. If the query reference teams by name or stats, you MUST include:
+   - teams.id
+   - teams.team_abbr
+   - teams.team_name
+   - teams.team_nick
+   - team_game_stats.team_id
+   - team_game_stats.opponent_team_id
+   - team_game_stats.season
+   - team_game_stats.week
+   - team_game_stats.game_type
+   - any stat columns directly needed to answer the query (e.g., pass_td, pass_yards, etc).
+8. If no schema columns match, return an empty object: { "tables": {} }.
 
 NOTE: player_game_stats contains weekly stats on a per-player basis.
 Season-level stats can be computed by aggregating over rows grouped by player_id and season.
@@ -504,6 +680,309 @@ the caller will treat it as a hard error.
 
 Here is the database schema the SQL must use:
 <schema>
-{{SCHEMA}}
+{
+  "teams": {
+    "pk": ["id"],
+    "columns": {
+      "id": "SERIAL",
+      "team_id": "INTEGER",
+      "team_abbr": "VARCHAR(10)",
+      "team_name": "VARCHAR(100)",
+      "team_nick": "VARCHAR(100)",
+      "team_conf": "VARCHAR(10)",
+      "team_division": "VARCHAR(10)",
+      "team_color": "VARCHAR(20)",
+      "team_color2": "VARCHAR(20)",
+      "team_color3": "VARCHAR(20)",
+      "team_color4": "VARCHAR(20)",
+      "team_logo_wikipedia": "TEXT"
+    },
+    "fks": {},
+    "unique": []
+  },
+
+  "players": {
+    "pk": ["gsis_id"],
+    "columns": {
+      "gsis_id": "VARCHAR(50)",
+      "nfl_id": "VARCHAR(50)",
+      "pfr_id": "VARCHAR(50)",
+      "espn_id": "VARCHAR(50)",
+      "display_name": "VARCHAR(100)",
+      "common_first_name": "VARCHAR(50)",
+      "first_name": "VARCHAR(50)",
+      "last_name": "VARCHAR(50)",
+      "short_name": "VARCHAR(50)",
+      "football_name": "VARCHAR(50)",
+      "suffix": "VARCHAR(10)",
+      "birth_date": "DATE",
+      "position_group": "VARCHAR(20)",
+      "position": "VARCHAR(10)",
+      "height": "SMALLINT",
+      "weight": "SMALLINT",
+      "headshot": "TEXT",
+      "college_name": "VARCHAR(100)",
+      "college_conference": "VARCHAR(50)",
+      "jersey_number": "SMALLINT",
+      "rookie_season": "SMALLINT",
+      "last_season": "SMALLINT",
+      "latest_team_id": "INTEGER",
+      "status": "VARCHAR(20)",
+      "years_of_experience": "SMALLINT",
+      "draft_year": "SMALLINT",
+      "draft_round": "SMALLINT",
+      "draft_pick": "SMALLINT",
+      "draft_team_id": "INTEGER"
+    },
+    "fks": {
+      "latest_team_id": "teams.id",
+      "draft_team_id": "teams.id"
+    },
+    "unique": [
+      ["nfl_id"],
+      ["pfr_id"],
+      ["espn_id"]
+    ]
+  },
+
+  "player_aliases": {
+    "pk": ["alias_id"],
+    "columns": {
+      "alias_id": "INT",
+      "player_id": "TEXT",
+      "alias": "TEXT",
+      "created_at": "TIMESTAMP"
+    },
+    "fks": {
+      "player_id": "players.gsis_id"
+    },
+    "unique": [
+      ["player_id", "alias"]
+    ]
+  },
+  "team_game_stats": {
+    "pk": ["id"],
+    "columns": {
+        "id": "BIGSERIAL",
+        "game_id": "TEXT",
+        "season": "SMALLINT",
+        "week": "SMALLINT",
+        "game_type": "TEXT (values: 'REG','POST','PRE')",
+        "team_id": "INTEGER",
+        "opponent_team_id": "INTEGER",
+        "home_away": "TEXT (values: 'HOME','AWAY')",
+
+        "points_for": "INTEGER",
+        "points_against": "INTEGER",
+        "point_diff": "INTEGER",
+        "result": "TEXT (values: 'W','L','T')",
+
+        "total_plays": "INTEGER",
+        "total_drives": "INTEGER",
+        "time_of_possession": "INTERVAL",
+
+        "completions": "INTEGER",
+        "attempts": "INTEGER",
+        "passing_yards": "INTEGER",
+        "passing_tds": "INTEGER",
+        "passing_interceptions": "INTEGER",
+        "sacks_suffered": "INTEGER",
+        "sack_yards_lost": "INTEGER",
+        "sack_fumbles": "INTEGER",
+        "sack_fumbles_lost": "INTEGER",
+        "passing_air_yards": "INTEGER",
+        "passing_yards_after_catch": "INTEGER",
+        "passing_first_downs": "INTEGER",
+        "passing_epa": "DOUBLE PRECISION",
+        "passing_cpoe": "DOUBLE PRECISION",
+        "passing_2pt_conversions": "INTEGER",
+
+        "pass_yards_per_att": "DOUBLE PRECISION",
+        "pass_epa_per_play": "DOUBLE PRECISION",
+        "pass_success_rate": "DOUBLE PRECISION",
+        "dropbacks": "INTEGER",
+        "neutral_pass_rate": "DOUBLE PRECISION",
+
+        "carries": "INTEGER",
+        "rushing_yards": "INTEGER",
+        "rushing_tds": "INTEGER",
+        "rushing_fumbles": "INTEGER",
+        "rushing_fumbles_lost": "INTEGER",
+        "rushing_first_downs": "INTEGER",
+        "rushing_epa": "DOUBLE PRECISION",
+        "rushing_2pt_conversions": "INTEGER",
+
+        "rush_yards_per_carry": "DOUBLE PRECISION",
+        "rush_epa_per_carry": "DOUBLE PRECISION",
+        "rush_success_rate": "DOUBLE PRECISION",
+
+        "receptions": "INTEGER",
+        "targets": "INTEGER",
+        "receiving_yards": "INTEGER",
+        "receiving_tds": "INTEGER",
+        "receiving_fumbles": "INTEGER",
+        "receiving_fumbles_lost": "INTEGER",
+        "receiving_air_yards": "INTEGER",
+        "receiving_yards_after_catch": "INTEGER",
+        "receiving_first_downs": "INTEGER",
+        "receiving_epa": "DOUBLE PRECISION",
+        "receiving_2pt_conversions": "INTEGER",
+
+        "def_tackles_solo": "INTEGER",
+        "def_tackles_with_assist": "INTEGER",
+        "def_tackle_assists": "INTEGER",
+        "def_tackles_for_loss": "INTEGER",
+        "def_tackles_for_loss_yards": "INTEGER",
+        "def_fumbles_forced": "INTEGER",
+        "def_sacks": "DOUBLE PRECISION",
+        "def_sack_yards": "INTEGER",
+        "def_qb_hits": "INTEGER",
+        "def_interceptions": "INTEGER",
+        "def_interception_yards": "INTEGER",
+        "def_pass_defended": "INTEGER",
+        "def_tds": "INTEGER",
+        "def_fumbles": "INTEGER",
+        "def_safeties": "INTEGER",
+
+        "defense_epa_total": "DOUBLE PRECISION",
+        "defense_epa_per_play": "DOUBLE PRECISION",
+
+        "misc_yards": "INTEGER",
+        "fumble_recovery_own": "INTEGER",
+        "fumble_recovery_yards_own": "INTEGER",
+        "fumble_recovery_opp": "INTEGER",
+        "fumble_recovery_yards_opp": "INTEGER",
+        "fumble_recovery_tds": "INTEGER",
+
+        "penalties": "INTEGER",
+        "penalty_yards": "INTEGER",
+        "timeouts": "INTEGER",
+
+        "punt_returns": "INTEGER",
+        "punt_return_yards": "INTEGER",
+        "kickoff_returns": "INTEGER",
+        "kickoff_return_yards": "INTEGER",
+        "special_teams_tds": "INTEGER",
+
+        "fg_made": "INTEGER",
+        "fg_att": "INTEGER",
+        "fg_missed": "INTEGER",
+        "fg_blocked": "INTEGER",
+        "fg_long": "INTEGER",
+        "fg_pct": "DOUBLE PRECISION",
+
+        "fg_made_0_19": "INTEGER",
+        "fg_made_20_29": "INTEGER",
+        "fg_made_30_39": "INTEGER",
+        "fg_made_40_49": "INTEGER",
+        "fg_made_50_59": "INTEGER",
+        "fg_made_60_": "INTEGER",
+
+        "fg_missed_0_19": "INTEGER",
+        "fg_missed_20_29": "INTEGER",
+        "fg_missed_30_39": "INTEGER",
+        "fg_missed_40_49": "INTEGER",
+        "fg_missed_50_59": "INTEGER",
+        "fg_missed_60_": "INTEGER",
+
+        "fg_made_list": "TEXT",
+        "fg_missed_list": "TEXT",
+        "fg_blocked_list": "TEXT",
+        "fg_made_distance": "TEXT",
+        "fg_missed_distance": "TEXT",
+        "fg_blocked_distance": "TEXT",
+
+        "pat_made": "INTEGER",
+        "pat_att": "INTEGER",
+        "pat_missed": "INTEGER",
+        "pat_blocked": "INTEGER",
+        "pat_pct": "DOUBLE PRECISION",
+
+        "gwfg_made": "INTEGER",
+        "gwfg_att": "INTEGER",
+        "gwfg_missed": "INTEGER",
+        "gwfg_blocked": "INTEGER",
+        "gwfg_distance": "INTEGER",
+
+        "created_at": "TIMESTAMPTZ"
+    },
+    "fks": {
+        "team_id": "teams.id",
+        "opponent_team_id": "teams.id"
+    },
+    "unique": [
+        ["team_id", "game_id"]
+    ]
+  },
+  "player_game_stats": {
+    "pk": ["id"],
+    "columns": {
+      "id": "BIGSERIAL",
+      "player_id": "TEXT",
+      "game_id": "TEXT",
+      "season": "SMALLINT",
+      "week": "SMALLINT",
+      "team_id": "INTEGER",
+      "opponent_team_id": "INTEGER",
+      "home_away": "TEXT (values: 'HOME','AWAY')",
+      "game_type": "TEXT (values: 'REG','POST','PRE')",
+      "snaps_offense": "INTEGER",
+      "snaps_offense_pct": "DOUBLE PRECISION",
+      "pass_att": "INTEGER",
+      "pass_cmp": "INTEGER",
+      "pass_yards": "INTEGER",
+      "pass_td": "INTEGER",
+      "interceptions": "INTEGER",
+      "sacks": "INTEGER",
+      "sack_yards": "INTEGER",
+      "pass_first_downs": "INTEGER",
+      "pass_air_yards": "INTEGER",
+      "pass_yac_yards": "INTEGER",
+      "pass_yards_per_att": "DOUBLE PRECISION",
+      "pass_any_a": "DOUBLE PRECISION",
+      "passer_rating": "DOUBLE PRECISION",
+      "cpoe": "DOUBLE PRECISION",
+      "pass_epa_total": "DOUBLE PRECISION",
+      "pass_epa_per_play": "DOUBLE PRECISION",
+      "pass_success_rate": "DOUBLE PRECISION",
+      "rush_att": "INTEGER",
+      "rush_yards": "INTEGER",
+      "rush_td": "INTEGER",
+      "rush_long": "INTEGER",
+      "rush_first_downs": "INTEGER",
+      "rush_fumbles": "INTEGER",
+      "rush_epa_total": "DOUBLE PRECISION",
+      "rush_epa_per_carry": "DOUBLE PRECISION",
+      "rush_success_rate": "DOUBLE PRECISION",
+      "targets": "INTEGER",
+      "receptions": "INTEGER",
+      "rec_yards": "INTEGER",
+      "rec_td": "INTEGER",
+      "rec_long": "INTEGER",
+      "rec_first_downs": "INTEGER",
+      "rec_air_yards": "INTEGER",
+      "rec_yac_yards": "INTEGER",
+      "rec_epa_total": "DOUBLE PRECISION",
+      "rec_epa_per_target": "DOUBLE PRECISION",
+      "rec_success_rate": "DOUBLE PRECISION",
+      "team_pass_att": "INTEGER",
+      "team_rush_att": "INTEGER",
+      "team_targets": "INTEGER",
+      "team_air_yards": "INTEGER",
+      "target_share": "DOUBLE PRECISION",
+      "air_yards_share": "DOUBLE PRECISION",
+      "rush_attempt_share": "DOUBLE PRECISION",
+      "created_at": "TIMESTAMPTZ"
+    },
+    "fks": {
+      "player_id": "players.gsis_id",
+      "team_id": "teams.id",
+      "opponent_team_id": "teams.id"
+    },
+    "unique": [
+      ["player_id", "game_id"]
+    ]
+  }
+}
 </schema>
 """

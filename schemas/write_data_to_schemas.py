@@ -133,10 +133,10 @@ def load_player_game_stats_into_db(pbp: pl.DataFrame, player_stats: pl.DataFrame
         print(f"✗ Error loading players game stats table: {e}")
         raise
 
-def load_team_game_stats_into_db(pbp: pl.DataFrame, team_stats: pl.DataFrame):
+def load_team_game_stats_into_db(teams: pl.DataFrame, pbp: pl.DataFrame, team_stats: pl.DataFrame):
     supabase: Client = init_load_dotenv()
     abbr_to_id = _extract_team_id_abbrev(supabase)
-    for row in tqdm(team_stats.iter_rows(named=True)):
+    for row in tqdm(teams.iter_rows(named=True)):
         team_week_stats: List[Dict[str, Any]] = utils.nfl_stats_transformers.to_team_game_stats(row["team_abbr"], pbp, team_stats)
         if not team_week_stats:
             continue
@@ -153,6 +153,8 @@ def main():
     # load_player_info_into_db()
     pbp: pl.DataFrame = nfl.load_pbp(list(range(2000, 2025)))
     team_stats: pl.DataFrame = nfl.load_team_stats(seasons=True)
+    teams = nfl.load_teams()
+    load_team_game_stats_into_db(teams, pbp, team_stats)
 
     # player_stats: pl.DataFrame = nfl.load_player_stats(list(range(2000, 2025)))
     # print("✓ PBP + Player Game + Team Stats tables loaded successfully")

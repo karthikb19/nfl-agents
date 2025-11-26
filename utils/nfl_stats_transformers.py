@@ -725,7 +725,7 @@ def to_team_game_stats(
             "opponent_team_id": opponent_team,
             "season": season,
             "week": week,
-            "season_type": season_type,
+            "game_type": season_type,
             "home_away": home_away,
             
             # Result / scoreboard

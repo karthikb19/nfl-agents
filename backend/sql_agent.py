@@ -398,27 +398,27 @@ def run_sql_agent(
     print("="*60 + "\n")
 
     # 2) Schema selection with timing
-    print("\n" + "="*60)
-    print("Getting relevant schema...")
-    schema_start = time.time()
-    schema_selection = choose_schema_for_query(question)
-    reduced_schema_str = build_reduced_schema(schema_selection)
-    reduced_schema_obj = json.loads(reduced_schema_str)
-    schema_duration = time.time() - schema_start
-    print(f"✓ Schema retrieval completed in {schema_duration:.3f}s")
-    print("="*60 + "\n")
+    # print("\n" + "="*60)
+    # print("Getting relevant schema...")
+    # schema_start = time.time()
+    # schema_selection = choose_schema_for_query(question)
+    # reduced_schema_str = build_reduced_schema(schema_selection)
+    # reduced_schema_obj = json.loads(reduced_schema_str)
+    # schema_duration = time.time() - schema_start
+    # print(f"✓ Schema retrieval completed in {schema_duration:.3f}s")
+    # print("="*60 + "\n")
 
     history: List[Dict[str, Any]] = []
 
     for step in range(1, max_steps + 1):
         context = {
             "question": question,
-            "schema": reduced_schema_obj,
+            # "schema": reduced_schema_obj,
             "history": history,
             "name_normalization": name_norm,  # NEW
         }
 
-        system_prompt = SQL_AGENT_SYSTEM_PROMPT.replace("{{SCHEMA}}", reduced_schema_str)
+        system_prompt = SQL_AGENT_SYSTEM_PROMPT #.replace("{{SCHEMA}}", reduced_schema_str)
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -596,7 +596,7 @@ def format_agent_response(result: Dict[str, Any]) -> str:
 
 
 def main():
-    example_query = "Who has higher ev plays on avg. Lamar or Josh Allen?"
+    example_query = "what team in what season won by the most on average? how mcuh did they lose by?"
 
     result = run_sql_agent(example_query, max_steps=15, show_progress=True)
     pretty = format_agent_response(result)
