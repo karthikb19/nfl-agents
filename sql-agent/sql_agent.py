@@ -596,7 +596,7 @@ def format_agent_response(result: Dict[str, Any]) -> str:
 
 
 def main():
-    example_query = "what team in what season won by the most on average? how mcuh did they lose by?"
+    example_query = "what percentile tight end was travis kelce in 2023?"
 
     result = run_sql_agent(example_query, max_steps=15, show_progress=True)
     pretty = format_agent_response(result)
