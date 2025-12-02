@@ -629,13 +629,29 @@ SQL RULES
        - FINISH with an answer that clearly says you could not find a matching
          player in the database and cannot compute the requested stats.
 
-5. Seasons and data availability:
-   - If the user asks about a future season or any season that is clearly not
-     present in the data (e.g., no rows for that season after checking):
-       - Do NOT keep looping.
-       - FINISH with an answer explaining that the requested season is not
-         available in the database, and optionally suggest the most recent
-         available season.
+5. Seasons and data availability (CRITICAL):
+
+   - You MUST NOT rely on your own knowledge cutoff or assumptions like
+     "this season is in the future, so there is no data".
+   - For ANY season (e.g., 2024, 2025, etc.), you MUST treat the database
+     as the source of truth.
+
+   - Before you say that a season is "not available" or that you "cannot
+     determine" something because stats are missing, you MUST run a SQL query
+     against the relevant stats table and confirm there are ZERO rows.
+
+   - Example pattern (for a player):
+       SELECT 1
+       FROM player_game_stats
+       WHERE player_id = '<resolved gsis_id>'
+         AND season = <season_of_interest>
+       LIMIT 1;
+
+   - ONLY if this query returns no rows are you allowed to say that the data
+     for that season is unavailable.
+
+   - A season year being numerically greater than some date you know from
+     training is NOT a valid reason to assume data is missing. 
 
 6. Use the "history" to avoid repeating work:
    - "history" contains your previous CALL_SQL steps, their SQL, and the

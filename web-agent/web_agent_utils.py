@@ -87,12 +87,9 @@ def search_web(refined_queries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return remove_duplicates_results
 
 
-def chunk_result(result: Dict[str, Any]) -> List[str]:
-    title = result.get("title")
+def chunks(result: Dict[str, Any]) -> List[str]:
     url = result.get("href")
-    ddgs_description = result.get("body")
-    print(url)
     html = trafilatura.fetch_url(url)
     text = trafilatura.extract(html)
-    print(text)
-    return [] 
+    
+
