@@ -1,6 +1,6 @@
 import ddgs
 import trafilatura
-from .web_agent_utils import process_query, search_web
+from .web_agent_utils import process_query, search_web, chunk_result
 
 def retrieve_top_k_chunks(query):
     pass
@@ -50,7 +50,7 @@ def main():
             print(f"   → Found {len(results)} results")
         
         for result in results:
-            print(result)
+            chunk_result(result) 
         
         # Retrieve Top K chunks based on the query
         print("📚 Retrieving relevant content...")

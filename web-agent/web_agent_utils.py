@@ -12,12 +12,14 @@ from .prompts import (
     REFINE_QUERY_PROMPT
 )
 from utils.llm_parsing import extract_json_object
+from sentence_transformers import SentenceTransformer
 from ddgs import DDGS
 import trafilatura
 
 
 db_url = get_db_url()
 HEADERS = get_openrouter_headers()
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def call_llm_messages(
     messages: List[Dict[str, str]],
@@ -83,3 +85,14 @@ def search_web(refined_queries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if result not in remove_duplicates_results:
             remove_duplicates_results.append(result) 
     return remove_duplicates_results
+
+
+def chunk_result(result: Dict[str, Any]) -> List[str]:
+    title = result.get("title")
+    url = result.get("href")
+    ddgs_description = result.get("body")
+    print(url)
+    html = trafilatura.fetch_url(url)
+    text = trafilatura.extract(html)
+    print(text)
+    return [] 
