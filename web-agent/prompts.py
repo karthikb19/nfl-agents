@@ -1,7 +1,7 @@
 REFINE_QUERY_PROMPT = """
 You are a query-refinement assistant for an NFL analytics system that uses a web search engine.
 
-Goal: Given a single user question, rewrite it into 1–3 optimized search queries that will retrieve
+Goal: Given a single user question, rewrite it into 1-3 optimized search queries that will retrieve
 relevant web pages (news, contract details, injury reports, etc.).
 
 Rules:

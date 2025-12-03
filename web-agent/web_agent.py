@@ -1,9 +1,16 @@
 import ddgs
 import trafilatura
-from .web_agent_utils import process_query, search_web, chunk_result
+from .web_agent_utils import (
+    process_query, 
+    search_web, 
+    process_text_into_chunks_with_embeddings, 
+    insert_embeddings_into_db,
+    retrieve_top_k_chunks
+)
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer
 
-def retrieve_top_k_chunks(query):
-    pass
+
 
 def generate_prompt(chunks):
     pass
@@ -17,6 +24,9 @@ def main():
     print("🌐 Web Agent - AI-Powered Search Assistant")
     print("=" * 60)
     print("Type your query or 'quit' to exit\n")
+    
+    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
     
     while True:
         # Modern prompt
@@ -50,12 +60,16 @@ def main():
             print(f"   → Found {len(results)} results")
         
         for result in results:
-            chunk_result(result) 
+            url, chunks, embeddings = process_text_into_chunks_with_embeddings(tokenizer, model, result)
+            if chunks: 
+                insert_embeddings_into_db(url, chunks, embeddings)
+
         
         # Retrieve Top K chunks based on the query
         print("📚 Retrieving relevant content...")
-        top_k_chunks = retrieve_top_k_chunks(refined_queries)
-
+        query_strings = [q["query"] for q in refined_queries]
+        top_k_chunks = retrieve_top_k_chunks(query_strings, 5, model)
+        print(top_k_chunks)
         # Generate prompt with the top k chunks
         prompt = generate_prompt(top_k_chunks)
 
