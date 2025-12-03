@@ -1,6 +1,6 @@
 import json
 import time
-from typing import List, Dict, Tuple, Any
+from typing import List, Dict, Tuple, Any, Optional
 import requests
 from utils.config import (
     MODEL,
@@ -29,6 +29,12 @@ CHUNK_OVERLAP = 64
 
 HEADERS = get_openrouter_headers()
 
+def _format_embedding_for_sql(embedding: np.ndarray) -> str:
+    """
+    Format a 1D embedding array as a pgvector literal, e.g. '[0.1,0.2,...]'.
+    """
+    emb_list = embedding.astype(float).tolist()
+    return "[" + ",".join(f"{float(x):.7f}" for x in emb_list) + "]"
 
 def call_llm_messages(
     messages: List[Dict[str, str]],
@@ -166,57 +172,100 @@ def insert_embeddings_into_db(url: str, chunks: List[str], embeddings: np.ndarra
         cursor.close()
         conn.close()
 
+def retrieve_top_k_chunks(
+    refined_queries: List[str],
+    k: int = 5,
+    model: Optional[SentenceTransformer] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Retrieve top-k most similar chunks for the first refined query using pgvector.
 
+    Strategy:
+        1. Use a CTE to bind the query vector as %s::vector (dimension 384).
+        2. Primary path: ORDER BY distance LIMIT k in SQL.
+        3. If 0 rows returned but table has data, fall back to Python-side sort.
+    """
+    if not refined_queries:
+        print("No refined queries provided.")
+        return []
 
-def retrieve_top_k_chunks(refined_queries: List[str], k: int = 5, model: SentenceTransformer = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")) -> List[Dict[str, Any]]: 
+    if model is None:
+        model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
     print(f"   → Encoding queries: {refined_queries}")
     all_query_embeddings = model.encode(refined_queries)
-    
-    # focus on just the first one
-    query_embed = all_query_embeddings[0]
-    emb_list = query_embed.astype(float).tolist()
-    
+    query_embed = np.array(all_query_embeddings[0], dtype=np.float32)
+
+    emb_str = _format_embedding_for_sql(query_embed)
+
     db_url = get_db_url()
     if "?pgbouncer=" in db_url:
         db_url = db_url.split("?pgbouncer=")[0]
-    print(f"   → Connecting to database: {db_url}")
-
     conn = psycopg2.connect(db_url)
-    register_vector(conn)
     cursor = conn.cursor()
-    closest_chunks = []
+    rows: List[Tuple[Any, ...]] = []
+
     try:
-        # Check row count
-        cursor.execute("SELECT COUNT(*) FROM web_chunks;")
+        # Optional: set IVFFLAT probes for better recall
+        try:
+            cursor.execute("SET LOCAL ivfflat.probes = 10;")
+        except Exception as e:
+            # Not fatal if the extension isn't installed or setting isn't allowed
+            print(f"   → Warning: could not SET ivfflat.probes: {e}")
+
+        cursor.execute("SELECT COUNT(*) FROM public.web_chunks;")
         count = cursor.fetchone()[0]
         print(f"   → Database contains {count} chunks")
 
-        # 3) Now run the distance query
-        # NOTE: There's a bug with pgvector + connection pooler where ORDER BY returns 0 rows
-        # Workaround: fetch all rows with distances and sort in Python
-        sql = """
+        if count == 0:
+            print("   → No chunks in DB, skipping similarity search")
+            return []
+
+        # --- Primary (preferred) path: ORDER BY distance in SQL ---
+        sql_primary = """
+            WITH q AS (
+                SELECT %s::vector AS v
+            )
             SELECT
                 url,
                 chunk_index,
                 chunk_text,
-                (embedding <=> %s) AS distance
-            FROM public.web_chunks;
+                (embedding <=> q.v) AS distance
+            FROM public.web_chunks, q
+            ORDER BY distance
+            LIMIT %s;
         """
-        print(f"   → Retrieving top {k} most similar chunks...")
 
-        # Convert to numpy array - pgvector's register_vector expects numpy arrays
-        query_vector = np.array(emb_list, dtype=np.float32)
-        
-        cursor.execute(sql, (query_vector,))
-        all_rows = cursor.fetchall()
-        
-        # Sort by distance in Python and take top k
-        sorted_rows = sorted(all_rows, key=lambda x: x[3])[:k]
-        rows = sorted_rows
-        print(f"   → Found {len(rows)} relevant chunks")
+        print(f"   → Retrieving top {k} most similar chunks via SQL ORDER BY...")
+        cursor.execute(sql_primary, (emb_str, k))
+        rows = cursor.fetchall()
+        print(f"   → Primary query returned {len(rows)} rows")
+
+        # If ORDER BY bug hits: table has data but the query returned nothing
+        if len(rows) == 0 and count > 0:
+            print("   ⚠️ Suspected pgvector + pooler ORDER BY bug. Falling back to Python-side sort.")
+
+            sql_fallback = """
+                WITH q AS (
+                    SELECT %s::vector AS v
+                )
+                SELECT
+                    url,
+                    chunk_index,
+                    chunk_text,
+                    (embedding <=> q.v) AS distance
+                FROM public.web_chunks, q;
+            """
+            cursor.execute(sql_fallback, (emb_str,))
+            all_rows = cursor.fetchall()
+            print(f"   → Fallback query returned {len(all_rows)} rows")
+
+            all_rows_sorted = sorted(all_rows, key=lambda r: r[3])
+            rows = all_rows_sorted[:k]
+            print(f"   → After Python sort, using top {len(rows)} rows")
 
     except Exception as e:
-        print("Error retrieving:", e)
+        print("Error retrieving top-k chunks:", e)
         print(f"Error type: {type(e).__name__}")
         import traceback
         traceback.print_exc()
@@ -235,46 +284,72 @@ def retrieve_top_k_chunks(refined_queries: List[str], k: int = 5, model: Sentenc
         for row in rows
     ]
     return closest_chunks
-    # try:
-    #     sql = """
-    #         SELECT
-    #             url,
-    #             chunk_index,
-    #             chunk_text,
-    #             (embedding <=> %s::vector) AS distance
-    #         FROM web_chunks
-    #         WHERE (embedding <=> %s::vector) < %s
-    #         ORDER BY embedding <=> %s::vector
-    #         LIMIT %s;
-    #     """
 
-    #     cursor.execute(
-    #         sql,
-    #         (
-    #             emb_str,            # for SELECT distance
-    #             emb_str,            # for WHERE distance comparison
-    #             1, # e.g., 0.3 for cosine distance cutoff
-    #             emb_str,            # for ORDER BY
-    #             k                   # top-k rows
-    #         )
-    #     )
-    #     rows = cursor.fetchall()
-    #     print(f"   → Retrieved {len(rows)} chunks from database")
-    #     closest_chunks =  [
-    #         {
-    #             "url": row[0],
-    #             "chunk_index": row[1],
-    #             "chunk_text": row[2],
-    #             "distance": float(row[3]),
-    #         }
-    #         for row in rows
-    #     ]
-    # except Exception as e:
-    #     print(f"Error retrieving top k chunks: {e}")
-    #     import traceback
-    #     traceback.print_exc()
-    # finally:
-    #     cursor.close()
-    #     conn.close()
 
-    # return closest_chunks
+# def retrieve_top_k_chunks(refined_queries: List[str], k: int = 5, model: SentenceTransformer = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")) -> List[Dict[str, Any]]: 
+#     print(f"   → Encoding queries: {refined_queries}")
+#     all_query_embeddings = model.encode(refined_queries)
+    
+#     # focus on just the first one
+#     query_embed = all_query_embeddings[0]
+#     emb_list = query_embed.astype(float).tolist()
+    
+#     db_url = get_db_url()
+#     if "?pgbouncer=" in db_url:
+#         db_url = db_url.split("?pgbouncer=")[0]
+#     print(f"   → Connecting to database: {db_url}")
+
+#     conn = psycopg2.connect(db_url)
+#     register_vector(conn)
+#     cursor = conn.cursor()
+#     closest_chunks = []
+#     try:
+#         # Check row count
+#         cursor.execute("SELECT COUNT(*) FROM web_chunks;")
+#         count = cursor.fetchone()[0]
+#         print(f"   → Database contains {count} chunks")
+
+#         # 3) Now run the distance query
+#         # NOTE: There's a bug with pgvector + connection pooler where ORDER BY returns 0 rows
+#         # Workaround: fetch all rows with distances and sort in Python
+#         sql = """
+#             SELECT
+#                 url,
+#                 chunk_index,
+#                 chunk_text,
+#                 (embedding <=> %s) AS distance
+#             FROM public.web_chunks;
+#         """
+#         print(f"   → Retrieving top {k} most similar chunks...")
+
+#         # Convert to numpy array - pgvector's register_vector expects numpy arrays
+#         query_vector = np.array(emb_list, dtype=np.float32)
+        
+#         cursor.execute(sql, (query_vector,))
+#         all_rows = cursor.fetchall()
+        
+#         # Sort by distance in Python and take top k
+#         sorted_rows = sorted(all_rows, key=lambda x: x[3])[:k]
+#         rows = sorted_rows
+#         print(f"   → Found {len(rows)} relevant chunks")
+
+#     except Exception as e:
+#         print("Error retrieving:", e)
+#         print(f"Error type: {type(e).__name__}")
+#         import traceback
+#         traceback.print_exc()
+#         rows = []
+#     finally:
+#         cursor.close()
+#         conn.close()
+
+#     closest_chunks = [
+#         {
+#             "url": row[0],
+#             "chunk_index": row[1],
+#             "chunk_text": row[2],
+#             "distance": float(row[3]),
+#         }
+#         for row in rows
+#     ]
+#     return closest_chunks
