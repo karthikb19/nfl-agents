@@ -5,18 +5,13 @@ from .web_agent_utils import (
     search_web, 
     process_text_into_chunks_with_embeddings, 
     insert_embeddings_into_db,
-    retrieve_top_k_chunks
+    retrieve_top_k_chunks,
+    generate_prompt,
+    generate_answer
 )
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer
 
-
-
-def generate_prompt(chunks):
-    pass
-
-def generate_answer(prompt):
-    pass
 
 def main():
     # Welcome message
@@ -71,11 +66,11 @@ def main():
         top_k_chunks = retrieve_top_k_chunks(query_strings, 5, model)
         print(top_k_chunks)
         # Generate prompt with the top k chunks
-        prompt = generate_prompt(top_k_chunks)
+        messages = generate_prompt(query,top_k_chunks)
 
         # Generate answer
         print("🤖 Generating answer...\n")
-        answer = generate_answer(prompt)
+        answer = generate_answer(messages)
 
         # Print the answer with visual separator
         if answer:

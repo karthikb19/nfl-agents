@@ -9,7 +9,8 @@ from utils.config import (
     get_openrouter_headers,
 )
 from .prompts import (
-    REFINE_QUERY_PROMPT
+    REFINE_QUERY_PROMPT,
+    WEB_AGENT_PROMPT
 )
 from utils.llm_parsing import extract_json_object
 from sentence_transformers import SentenceTransformer
@@ -19,7 +20,6 @@ import trafilatura
 
 import psycopg2
 from psycopg2.extras import execute_values
-from pgvector.psycopg2 import register_vector
 
 
 CHUNK_DIM = 384
@@ -106,7 +106,7 @@ def process_text_into_chunks_with_embeddings(tokenizer, model, result: Dict[str,
     url = result.get("href")
     html = trafilatura.fetch_url(url)
     text = trafilatura.extract(html)
-
+    print(f"Text for {url}: {text}")
     if text is None:
         print(f"No text found for {url} into 0 chunks")
         return url, [], np.array([])
@@ -286,70 +286,36 @@ def retrieve_top_k_chunks(
     return closest_chunks
 
 
-# def retrieve_top_k_chunks(refined_queries: List[str], k: int = 5, model: SentenceTransformer = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")) -> List[Dict[str, Any]]: 
-#     print(f"   → Encoding queries: {refined_queries}")
-#     all_query_embeddings = model.encode(refined_queries)
-    
-#     # focus on just the first one
-#     query_embed = all_query_embeddings[0]
-#     emb_list = query_embed.astype(float).tolist()
-    
-#     db_url = get_db_url()
-#     if "?pgbouncer=" in db_url:
-#         db_url = db_url.split("?pgbouncer=")[0]
-#     print(f"   → Connecting to database: {db_url}")
+def generate_prompt(original_query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    system_prompt = WEB_AGENT_PROMPT
+    if not chunks:
+        context_str = "No web snippets were retrieved for this question."
+    else:
+        lines = []
+        for i, ch in enumerate(chunks):
+            url = ch.get("url", "Unknown URL")
+            ch_idx = ch.get("chunk_index", "N/A")
+            ch_text = ch.get("chunk_text", "")
+            lines.append(
+                f"[Source {i}] URL: {url}\n"
+                f"Chunk index: {ch_idx}\n"
+                f"Content:\n{ch_text}\n"
+            )
+        context_str = "\n\n".join(lines)
+    user_content = f"""User question:
+    {original_query}
 
-#     conn = psycopg2.connect(db_url)
-#     register_vector(conn)
-#     cursor = conn.cursor()
-#     closest_chunks = []
-#     try:
-#         # Check row count
-#         cursor.execute("SELECT COUNT(*) FROM web_chunks;")
-#         count = cursor.fetchone()[0]
-#         print(f"   → Database contains {count} chunks")
+    Retrieved web context:
+    {context_str}
 
-#         # 3) Now run the distance query
-#         # NOTE: There's a bug with pgvector + connection pooler where ORDER BY returns 0 rows
-#         # Workaround: fetch all rows with distances and sort in Python
-#         sql = """
-#             SELECT
-#                 url,
-#                 chunk_index,
-#                 chunk_text,
-#                 (embedding <=> %s) AS distance
-#             FROM public.web_chunks;
-#         """
-#         print(f"   → Retrieving top {k} most similar chunks...")
-
-#         # Convert to numpy array - pgvector's register_vector expects numpy arrays
-#         query_vector = np.array(emb_list, dtype=np.float32)
+    Now, using the web context above (and clearly marking any speculation that goes beyond it), write the best possible answer to the user question."""
         
-#         cursor.execute(sql, (query_vector,))
-#         all_rows = cursor.fetchall()
-        
-#         # Sort by distance in Python and take top k
-#         sorted_rows = sorted(all_rows, key=lambda x: x[3])[:k]
-#         rows = sorted_rows
-#         print(f"   → Found {len(rows)} relevant chunks")
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
 
-#     except Exception as e:
-#         print("Error retrieving:", e)
-#         print(f"Error type: {type(e).__name__}")
-#         import traceback
-#         traceback.print_exc()
-#         rows = []
-#     finally:
-#         cursor.close()
-#         conn.close()
 
-#     closest_chunks = [
-#         {
-#             "url": row[0],
-#             "chunk_index": row[1],
-#             "chunk_text": row[2],
-#             "distance": float(row[3]),
-#         }
-#         for row in rows
-#     ]
-#     return closest_chunks
+def generate_answer(messages):
+    response = call_llm_messages(messages)
+    return response
