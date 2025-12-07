@@ -16,7 +16,7 @@ from transformers import AutoTokenizer
 def main():
     # Welcome message
     print("=" * 60)
-    print("🌐 Web Agent - AI-Powered Search Assistant")
+    print("🏈 NFL Agent - AI-Powered NFL Search Assistant")
     print("=" * 60)
     print("Type your query or 'quit' to exit\n")
     

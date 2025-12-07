@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import datetime
 from typing import List, Dict, Tuple, Any, Optional
 import requests
 from utils.config import (
@@ -74,7 +75,12 @@ def call_llm_messages(
         raise RuntimeError(f"Unexpected LLM response format: {data}") from e
 
 def process_query(query: str) -> List[Dict[str, Any]]:
-    system_prompt = REFINE_QUERY_PROMPT
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    system_prompt = (
+        REFINE_QUERY_PROMPT
+        + f"\n\nThe current date is {today_str} (YYYY-MM-DD). "
+          "Use this to interpret temporal phrases like 'today', 'yesterday', or 'this week' when rewriting queries (or any of their abbrevs)."
+    )
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": query},
