@@ -1,28 +1,28 @@
 /* ============================================
-   NFL Agent Chat - Premium Design System
+   NFL Agent Chat - Premium Dark Design System
    Typography: Fraunces + IBM Plex Sans
    ============================================ */
 
 /* CSS Variables - Design Tokens */
 :root {
-  /* Colors */
-  --bg-page: #FAF9F7;
-  --bg-surface: #FFFFFF;
-  --bg-surface-hover: #F5F4F2;
-  --border: #E8E6E3;
-  --border-focus: #2D5A4A;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  /* Colors - Dark Theme */
+  --bg-page: #0F0F0F;
+  --bg-surface: #1A1A1A;
+  --bg-surface-hover: #242424;
+  --border: #2A2A2A;
+  --border-focus: #6B9E8A;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
   
   /* Text */
-  --text-primary: #1A1A1A;
-  --text-secondary: #6B6B6B;
-  --text-tertiary: #9A9A9A;
+  --text-primary: #E8E8E8;
+  --text-secondary: #A0A0A0;
+  --text-tertiary: #666666;
   
-  /* Accent */
-  --accent: #2D5A4A;
-  --accent-hover: #234739;
-  --accent-light: #E8F0ED;
+  /* Accent - muted sage green */
+  --accent: #6B9E8A;
+  --accent-hover: #5A8B78;
+  --accent-light: rgba(107, 158, 138, 0.15);
   
   /* Spacing */
   --space-xs: 4px;

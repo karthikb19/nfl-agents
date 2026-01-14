@@ -27,7 +27,8 @@ load_dotenv(find_dotenv())
 
 # MODEL = "x-ai/grok-4.1-fast:free"
 # MODEL = "openai/gpt-4.1-mini"
-MODEL = "google/gemini-2.5-flash-lite"
+# MODEL = "google/gemini-2.5-flash-lite"
+MODEL = "openai/gpt-5.1-chat"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 

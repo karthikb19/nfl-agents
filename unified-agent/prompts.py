@@ -52,8 +52,15 @@ You MUST output exactly one JSON object per turn. No prose, no markdown fences.
 3) To finish with an answer:
 {
   "action": "FINISH",
-  "final_answer": "<synthesized natural-language answer>"
+  "final_answer": "<synthesized natural-language answer - be DESCRIPTIVE and DETAILED>"
 }
+
+IMPORTANT for final_answer:
+- Provide rich, descriptive answers with context and analysis
+- Don't just state facts - explain their significance
+- Include relevant background information and comparisons
+- Use specific numbers, dates, and details from your sources
+- Make the answer engaging and informative, not just a bare-bones response
 
 ====================
 CONTEXT PROVIDED TO YOU

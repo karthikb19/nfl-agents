@@ -34,7 +34,8 @@ def get_openrouter_api_key() -> str:
     return key
 
 
-MODEL = "google/gemini-2.5-flash-lite"
+# MODEL = "google/gemini-2.5-flash-lite"
+MODEL = "openai/gpt-5.1-chat"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 

@@ -38,6 +38,7 @@ Output: STRICT JSON with this exact shape:
       "original": "<exact substring as it appears in the question>",
       "normalized": "<best-guess canonical NFL player name, or null>",
       "confidence": "<high | medium | low>",
+      "is_retired": <true | false>,
       "reason": "<short explanation>"
     },
     ...
@@ -52,11 +53,13 @@ Rules:
 - If two references map to the same canonical player, include BOTH separately in the array.
 - "original" must match the exact user text (case-sensitive and substring-accurate).
 - confidence ∈ {"high","medium","low"}.
+- is_retired: set to true if the player has retired from the NFL (e.g., Tom Brady, Peyton Manning, Drew Brees).
 
 Examples of common NFL nicknames and abbreviations:
-    - "tb12" -> "Tom Brady"
-    - "jjetas" -> "Justin Jefferson"
-    - "cmc" -> "Christian McCaffrey"
+    - "tb12" -> "Tom Brady" (is_retired: true)
+    - "jjetas" -> "Justin Jefferson" (is_retired: false)
+    - "cmc" -> "Christian McCaffrey" (is_retired: false)
+    - "the sheriff" -> "Peyton Manning" (is_retired: true)
 
 STRICT REQUIREMENTS:
 - Output ONLY the JSON object described above.
@@ -68,15 +71,14 @@ STRICT REQUIREMENTS:
 RELEVANT_SCHEMA = """
 {
   "teams": {
-    "pk": ["id"],
+    "description": "Team metadata. Use team_abbr as the join key for all other tables.",
+    "pk": ["team_abbr"],
     "columns": {
-      "id": "SERIAL",
-      "team_id": "INTEGER",
-      "team_abbr": "VARCHAR(10)",
-      "team_name": "VARCHAR(100)",
-      "team_nick": "VARCHAR(100)",
-      "team_conf": "VARCHAR(10)",
-      "team_division": "VARCHAR(10)",
+      "team_abbr": "VARCHAR(10) -- e.g. 'ARI', 'NE', 'KC' - THIS IS THE JOIN KEY",
+      "team_name": "VARCHAR(100) -- e.g. 'Arizona Cardinals'",
+      "team_nick": "VARCHAR(100) -- e.g. 'Cardinals'",
+      "team_conf": "VARCHAR(10) -- 'AFC' or 'NFC'",
+      "team_division": "VARCHAR(10) -- e.g. 'West', 'East'",
       "team_color": "VARCHAR(20)",
       "team_color2": "VARCHAR(20)",
       "team_color3": "VARCHAR(20)",
@@ -88,6 +90,7 @@ RELEVANT_SCHEMA = """
   },
 
   "players": {
+    "description": "ACTIVE/RECENT ROSTER ONLY - retired players (e.g., Tom Brady, Peyton Manning) are NOT in this table. For retired players, query player_game_stats directly if you know their player_id.",
     "pk": ["gsis_id"],
     "columns": {
       "gsis_id": "VARCHAR(50)",
@@ -138,8 +141,8 @@ RELEVANT_SCHEMA = """
         "season": "SMALLINT",
         "week": "SMALLINT",
         "game_type": "TEXT (values: 'REG','POST','PRE')",
-        "team_id": "VARCHAR(10)",
-        "opponent_team_id": "VARCHAR(10)",
+        "team_id": "VARCHAR(10) -- team abbreviation e.g. 'KC', 'NE' - joins to teams.team_abbr",
+        "opponent_team_id": "VARCHAR(10) -- opponent abbreviation - joins to teams.team_abbr",
         "home_away": "TEXT (values: 'HOME','AWAY')",
 
         "points_for": "INTEGER",
@@ -292,8 +295,8 @@ RELEVANT_SCHEMA = """
       "game_id": "TEXT",
       "season": "SMALLINT",
       "week": "SMALLINT",
-      "team_id": "VARCHAR(10)",
-      "opponent_team_id": "VARCHAR(10)",
+      "team_id": "VARCHAR(10) -- team abbreviation e.g. 'KC', 'NE' - joins to teams.team_abbr",
+      "opponent_team_id": "VARCHAR(10) -- opponent abbreviation - joins to teams.team_abbr",
       "home_away": "TEXT (values: 'HOME','AWAY')",
       "game_type": "TEXT (values: 'REG','POST','PRE')",
       "snaps_offense": "INTEGER",
@@ -410,10 +413,33 @@ You MUST understand and use the meaning of the following tables/columns:
 - Relationship between player_game_stats and teams:
     - player_game_stats.team_id and player_game_stats.opponent_team_id store
       team abbreviations that correspond to teams.team_abbr.
-    - To get the opponent team name for a game, you MUST join:
+    - To get the player's team name:
+        FROM read_parquet('sql-agent/data/player_game_stats.parquet') pgs
+        JOIN read_parquet('sql-agent/data/teams.parquet') t
+          ON t.team_abbr = pgs.team_id
+    - To get the opponent team name:
         FROM read_parquet('sql-agent/data/player_game_stats.parquet') pgs
         JOIN read_parquet('sql-agent/data/teams.parquet') opp
           ON opp.team_abbr = pgs.opponent_team_id
+
+- Relationship between team_game_stats and teams:
+    - team_game_stats.team_id and team_game_stats.opponent_team_id store
+      team abbreviations that correspond to teams.team_abbr.
+    - Example:
+        FROM read_parquet('sql-agent/data/team_game_stats.parquet') tgs
+        JOIN read_parquet('sql-agent/data/teams.parquet') t
+          ON t.team_abbr = tgs.team_id
+
+- Relationship between players and teams:
+    - players.latest_team and players.draft_team store team abbreviations.
+    - To get a player's current team name:
+        FROM read_parquet('sql-agent/data/players.parquet') p
+        JOIN read_parquet('sql-agent/data/teams.parquet') t
+          ON t.team_abbr = p.latest_team
+
+CRITICAL JOIN RULE:
+- NEVER join on teams.team_id (that's an internal integer ID, NOT the abbreviation)
+- ALWAYS join on teams.team_abbr (the abbreviation like 'KC', 'NE', 'TB')
 
 SCHEMA AVAILABILITY RULES (CRITICAL):
 - If the schema clearly contains a column that approximates what the user is
@@ -587,14 +613,39 @@ SQL RULES
    - For each relevant player mention you're querying:
        name_to_match = normalized or original as defined above.
 
-   - Your FIRST step for a player should be a name-resolution query:
-       - Use players.display_name with ILIKE for case-insensitive matching.
-       - Example:
-           SELECT gsis_id, display_name
-           FROM read_parquet('sql-agent/data/players.parquet')
-           WHERE display_name ILIKE '%Brady%'
-           LIMIT 10;
-       - Always LIMIT name-resolution queries (e.g. LIMIT 10).
+   - IMPORTANT: The players table only contains ACTIVE/RECENT roster players.
+     Retired players (e.g., Tom Brady, Peyton Manning, Drew Brees) are NOT in this table.
+     If you search for a retired player and get no results, explain this limitation.
+
+   - Check name_normalization.players for is_retired flag:
+       - If is_retired = true: warn the user that this retired player may not be
+         in the players table, and their historical stats may require direct
+         lookup in player_game_stats if you have their player_id.
+
+   - Your FIRST step for a player should be a name-resolution query.
+     Use DuckDB's fuzzy matching functions for better results:
+
+     PREFERRED: Use jaro_winkler_similarity for fuzzy name matching:
+         SELECT gsis_id, display_name,
+                jaro_winkler_similarity(LOWER(display_name), LOWER('Patrick Mahomes')) as score
+         FROM read_parquet('sql-agent/data/players.parquet')
+         WHERE jaro_winkler_similarity(LOWER(display_name), LOWER('Patrick Mahomes')) > 0.8
+         ORDER BY score DESC
+         LIMIT 5;
+
+     FALLBACK: Use ILIKE for simple substring matching:
+         SELECT gsis_id, display_name
+         FROM read_parquet('sql-agent/data/players.parquet')
+         WHERE display_name ILIKE '%Mahomes%'
+         LIMIT 10;
+
+     ALTERNATIVE: Use levenshtein distance for typo tolerance:
+         SELECT gsis_id, display_name,
+                levenshtein(LOWER(display_name), LOWER('Patrik Mahomes')) as edit_dist
+         FROM read_parquet('sql-agent/data/players.parquet')
+         WHERE levenshtein(LOWER(display_name), LOWER('Patrik Mahomes')) < 5
+         ORDER BY edit_dist
+         LIMIT 5;
 
    - That query should return at least:
        - players.gsis_id
@@ -611,8 +662,10 @@ SQL RULES
          state that this was an assumption based on fuzzy matching.
 
    - If no rows are returned for name resolution:
-       - FINISH with an answer that clearly says you could not find a matching
-         player in the database and cannot compute the requested stats.
+       - If is_retired = true from name_normalization: explain that the player
+         is retired and not in the active roster table.
+       - Otherwise: FINISH with an answer that clearly says you could not find
+         a matching player in the database.
 
 5. Seasons and data availability (CRITICAL):
 
@@ -683,15 +736,14 @@ Here is the database schema the SQL must use:
 <schema>
 {
   "teams": {
-    "pk": ["id"],
+    "description": "Team metadata. Use team_abbr as the join key for all other tables.",
+    "pk": ["team_abbr"],
     "columns": {
-      "id": "SERIAL",
-      "team_id": "INTEGER",
-      "team_abbr": "VARCHAR(10)",
-      "team_name": "VARCHAR(100)",
-      "team_nick": "VARCHAR(100)",
-      "team_conf": "VARCHAR(10)",
-      "team_division": "VARCHAR(10)",
+      "team_abbr": "VARCHAR(10) -- e.g. 'ARI', 'NE', 'KC' - THIS IS THE JOIN KEY",
+      "team_name": "VARCHAR(100) -- e.g. 'Arizona Cardinals'",
+      "team_nick": "VARCHAR(100) -- e.g. 'Cardinals'",
+      "team_conf": "VARCHAR(10) -- 'AFC' or 'NFC'",
+      "team_division": "VARCHAR(10) -- e.g. 'West', 'East'",
       "team_color": "VARCHAR(20)",
       "team_color2": "VARCHAR(20)",
       "team_color3": "VARCHAR(20)",
@@ -703,6 +755,7 @@ Here is the database schema the SQL must use:
   },
 
   "players": {
+    "description": "ACTIVE/RECENT ROSTER ONLY - retired players are NOT in this table.",
     "pk": ["gsis_id"],
     "columns": {
       "gsis_id": "VARCHAR(50)",
@@ -753,8 +806,8 @@ Here is the database schema the SQL must use:
         "season": "SMALLINT",
         "week": "SMALLINT",
         "game_type": "TEXT (values: 'REG','POST','PRE')",
-        "team_id": "VARCHAR(10)",
-        "opponent_team_id": "VARCHAR(10)",
+        "team_id": "VARCHAR(10) -- team abbreviation e.g. 'KC', 'NE' - joins to teams.team_abbr",
+        "opponent_team_id": "VARCHAR(10) -- opponent abbreviation - joins to teams.team_abbr",
         "home_away": "TEXT (values: 'HOME','AWAY')",
 
         "points_for": "INTEGER",
@@ -907,8 +960,8 @@ Here is the database schema the SQL must use:
       "game_id": "TEXT",
       "season": "SMALLINT",
       "week": "SMALLINT",
-      "team_id": "VARCHAR(10)",
-      "opponent_team_id": "VARCHAR(10)",
+      "team_id": "VARCHAR(10) -- team abbreviation e.g. 'KC', 'NE' - joins to teams.team_abbr",
+      "opponent_team_id": "VARCHAR(10) -- opponent abbreviation - joins to teams.team_abbr",
       "home_away": "TEXT (values: 'HOME','AWAY')",
       "game_type": "TEXT (values: 'REG','POST','PRE')",
       "snaps_offense": "INTEGER",
