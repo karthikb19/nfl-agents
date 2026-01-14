@@ -314,6 +314,16 @@ def generate_prompt(original_query: str, chunks: List[Dict[str, Any]]) -> List[D
     Retrieved web context:
     {context_str}
 
+
+    IMPORTANT:
+    - Assume the user is asking about the CURRENT NFL SEASON (2025–2026).
+    - Ignore sources that primarily discuss other seasons (e.g., 2024 predictions), unless needed for minimal background.
+    - If multiple sources conflict across seasons, focus ONLY on the 2025–2026 season.
+
+    NOTE:
+    - The current date is {datetime.now().strftime("%Y-%m-%d")}.
+    - The current time is {datetime.now().strftime("%H:%M:%S")}.
+
     Now, using the web context above (and clearly marking any speculation that goes beyond it), write the best possible answer to the user question."""
         
     return [
@@ -325,3 +335,60 @@ def generate_prompt(original_query: str, chunks: List[Dict[str, Any]]) -> List[D
 def generate_answer(messages):
     response = call_llm_messages(messages)
     return response
+
+
+def run_web_agent(question: str) -> Dict[str, Any]:
+    """
+    Run the complete web agent pipeline for a given question.
+    
+    This packages the full flow:
+      1. Process/refine the query
+      2. Search the web
+      3. Chunk and embed results
+      4. Retrieve top-k chunks
+      5. Generate answer
+    
+    Returns:
+        {
+            "answer": str,
+            "sources": List[str],
+            "num_chunks_retrieved": int,
+        }
+    """
+    from sentence_transformers import SentenceTransformer
+    from transformers import AutoTokenizer
+    
+    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+    
+    print("  🔍 Refining query...")
+    refined_queries = process_query(question)
+    
+    print("  🌐 Searching web...")
+    results = search_web(refined_queries)
+    print(f"     Found {len(results)} results")
+    
+    # Process and store chunks
+    for result in results:
+        url, chunks, embeddings = process_text_into_chunks_with_embeddings(tokenizer, model, result)
+        if chunks:
+            insert_embeddings_into_db(url, chunks, embeddings)
+    
+    # Retrieve relevant chunks
+    print("  📚 Retrieving relevant content...")
+    query_strings = [q["query"] for q in refined_queries]
+    top_k_chunks = retrieve_top_k_chunks(query_strings, 5, model)
+    
+    # Generate answer
+    messages = generate_prompt(question, top_k_chunks)
+    print("  🤖 Generating answer...")
+    answer = call_llm_messages(messages)
+    
+    # Extract sources from chunks
+    sources = list(set(chunk.get("url", "") for chunk in top_k_chunks if chunk.get("url")))
+    
+    return {
+        "answer": answer,
+        "sources": sources,
+        "num_chunks_retrieved": len(top_k_chunks),
+    }

@@ -3,16 +3,16 @@
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import duckdb
 from decimal import Decimal
 import requests
 from dotenv import load_dotenv, find_dotenv
 import re
 
-from prompts import (
+from .prompts import (
     RELEVANT_SCHEMA,
     FIND_APPROPRIATE_SCHEMA_PROMPT,
     SQL_AGENT_SYSTEM_PROMPT,
@@ -31,13 +31,8 @@ MODEL = "google/gemini-2.5-flash-lite"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-db_url = os.getenv("SUPABASE_DB_URL")
-if not db_url:
-    raise RuntimeError("SUPABASE_DB_URL is not set in the environment")
-
-# Strip ?pgbouncer=... for psycopg2 compatibility
-if "?pgbouncer=" in db_url:
-    db_url = db_url.split("?pgbouncer=")[0]
+# Path to parquet data directory
+DATA_DIR = Path(__file__).parent / "data"
 
 if not OPENROUTER_API_KEY:
     raise RuntimeError("OPENROUTER_API_KEY is not set in the environment")
@@ -336,22 +331,20 @@ def _convert_decimals(obj: Any) -> Any:
 
 def execute_sql(sql: str) -> Tuple[List[str], List[List[Any]]]:
     """
-    Execute a read-only SQL query and return (columns, rows).
+    Execute a read-only SQL query using DuckDB and return (columns, rows).
     """
     validate_sql_readonly(sql)
 
-    conn = psycopg2.connect(db_url)
+    con = duckdb.connect()  # In-memory connection
     try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(sql)
-            records = cur.fetchall()
-            if not records:
-                return [], []
-            columns = list(records[0].keys())
-            rows = [[_convert_decimals(row[col]) for col in columns] for row in records]
-            return columns, rows
+        result = con.execute(sql).fetchdf()
+        if result.empty:
+            return [], []
+        columns = list(result.columns)
+        rows = [[_convert_decimals(val) for val in row] for row in result.values.tolist()]
+        return columns, rows
     finally:
-        conn.close()
+        con.close()
 
 
 # ----------------------------------------------------

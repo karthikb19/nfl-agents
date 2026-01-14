@@ -112,38 +112,22 @@ RELEVANT_SCHEMA = """
       "jersey_number": "SMALLINT",
       "rookie_season": "SMALLINT",
       "last_season": "SMALLINT",
-      "latest_team_id": "INTEGER",
+      "latest_team": "VARCHAR(10)",
       "status": "VARCHAR(20)",
       "years_of_experience": "SMALLINT",
       "draft_year": "SMALLINT",
       "draft_round": "SMALLINT",
       "draft_pick": "SMALLINT",
-      "draft_team_id": "INTEGER"
+      "draft_team": "VARCHAR(10)"
     },
     "fks": {
-      "latest_team_id": "teams.id",
-      "draft_team_id": "teams.id"
+      "latest_team": "teams.team_abbr",
+      "draft_team": "teams.team_abbr"
     },
     "unique": [
       ["nfl_id"],
       ["pfr_id"],
       ["espn_id"]
-    ]
-  },
-
-  "player_aliases": {
-    "pk": ["alias_id"],
-    "columns": {
-      "alias_id": "INT",
-      "player_id": "TEXT",
-      "alias": "TEXT",
-      "created_at": "TIMESTAMP"
-    },
-    "fks": {
-      "player_id": "players.gsis_id"
-    },
-    "unique": [
-      ["player_id", "alias"]
     ]
   },
   "team_game_stats": {
@@ -154,8 +138,8 @@ RELEVANT_SCHEMA = """
         "season": "SMALLINT",
         "week": "SMALLINT",
         "game_type": "TEXT (values: 'REG','POST','PRE')",
-        "team_id": "INTEGER",
-        "opponent_team_id": "INTEGER",
+        "team_id": "VARCHAR(10)",
+        "opponent_team_id": "VARCHAR(10)",
         "home_away": "TEXT (values: 'HOME','AWAY')",
 
         "points_for": "INTEGER",
@@ -293,8 +277,8 @@ RELEVANT_SCHEMA = """
         "created_at": "TIMESTAMPTZ"
     },
     "fks": {
-        "team_id": "teams.id",
-        "opponent_team_id": "teams.id"
+        "team_id": "teams.team_abbr",
+        "opponent_team_id": "teams.team_abbr"
     },
     "unique": [
         ["team_id", "game_id"]
@@ -308,8 +292,8 @@ RELEVANT_SCHEMA = """
       "game_id": "TEXT",
       "season": "SMALLINT",
       "week": "SMALLINT",
-      "team_id": "INTEGER",
-      "opponent_team_id": "INTEGER",
+      "team_id": "VARCHAR(10)",
+      "opponent_team_id": "VARCHAR(10)",
       "home_away": "TEXT (values: 'HOME','AWAY')",
       "game_type": "TEXT (values: 'REG','POST','PRE')",
       "snaps_offense": "INTEGER",
@@ -362,20 +346,21 @@ RELEVANT_SCHEMA = """
     },
     "fks": {
       "player_id": "players.gsis_id",
-      "team_id": "teams.id",
-      "opponent_team_id": "teams.id"
+      "team_id": "teams.team_abbr",
+      "opponent_team_id": "teams.team_abbr"
     },
     "unique": [
       ["player_id", "game_id"]
     ]
   }
 }
+</schema>
 """
 
 
 # System prompt for the schema-retrieval model
 FIND_APPROPRIATE_SCHEMA_PROMPT = """
-You are a schema-retrieval assistant for a PostgreSQL database.
+You are a schema-retrieval assistant for a DuckDB database with parquet files.
 
 Your task is to analyze a user’s natural-language query and identify the
 minimum set of relevant tables and columns needed to answer that query.
@@ -413,8 +398,8 @@ You MUST understand and use the meaning of the following tables/columns:
 - Table team_game_stats:
     - Each row is one team in one game.
     - Key columns:
-        - team_id: references teams.id.
-        - opponent_team_id: references teams.id.
+        - team_id: team abbreviation (e.g., 'NE', 'TB').
+        - opponent_team_id: opponent team abbreviation.
         - season: season year (e.g., 2009, 2019).
         - week: week number within the season.
         - home_away: 'HOME' or 'AWAY'
@@ -424,22 +409,22 @@ You MUST understand and use the meaning of the following tables/columns:
 
 - Relationship between player_game_stats and teams:
     - player_game_stats.team_id and player_game_stats.opponent_team_id store
-      team ids that correspond to teams.id.
+      team abbreviations that correspond to teams.team_abbr.
     - To get the opponent team name for a game, you MUST join:
-        FROM player_game_stats pgs
-        JOIN teams opp
-          ON opp.id = pgs.opponent_team_id
+        FROM read_parquet('sql-agent/data/player_game_stats.parquet') pgs
+        JOIN read_parquet('sql-agent/data/teams.parquet') opp
+          ON opp.team_abbr = pgs.opponent_team_id
 
 SCHEMA AVAILABILITY RULES (CRITICAL):
 - If the schema clearly contains a column that approximates what the user is
   asking for, you MUST use it instead of claiming the data is unavailable.
   Examples:
     - For "who was it against?", you MUST use player_game_stats.opponent_team_id
-      and join teams on teams.id.
+      and join teams on teams.team_abbr.
     - For "which season", you MUST use player_game_stats.season.
     - For "regular season vs postseason", you MUST use player_game_stats.game_type.
 - You MUST NOT say the schema "does not contain opponent information" when
-  player_game_stats.opponent_team_id and teams.id exist.
+  player_game_stats.opponent_team_id and teams.team_abbr exist.
 - You may say that the score is unavailable, since there is no score column.
 
 
@@ -464,9 +449,6 @@ You MUST follow these rules:
 5. If the query references players by name or stats, you MUST include:
    - players.display_name
    - players.gsis_id
-   - player_aliases.player_id
-   - player_aliases.alias
-   - player_game_stats.player_id
    - player_game_stats.player_id
    - player_game_stats.season
    - player_game_stats.week
@@ -506,7 +488,7 @@ You MUST respond with STRICT JSON and nothing else.
 """
 
 SQL_AGENT_SYSTEM_PROMPT = """
-You are an autonomous SQL analyst for a PostgreSQL database.
+You are an autonomous SQL analyst for a DuckDB database with parquet files.
 
 Your ONLY valid output is a SINGLE JSON object, with no surrounding text,
 no Markdown, and no code fences.
@@ -572,8 +554,8 @@ NAME NORMALIZATION (CRITICAL):
     name_to_match = p.normalized if not null else p.original
 
 - When you refer to a player in SQL:
-    - Use name_to_match for fuzzy matching on players.display_name and
-      player_aliases.alias.
+    - Use name_to_match for matching on players.display_name using ILIKE.
+    - Use read_parquet('sql-agent/data/players.parquet') to access players table.
 - In your FINAL natural-language answer:
     - If you used a normalized name different from original, mention that, e.g.:
       "I normalized 'tb12' to 'Tom Brady'"
@@ -585,6 +567,11 @@ SQL RULES
 1. Use ONLY tables and columns in the provided schema.
    - The schema is given to you under the "schema" key in the context.
    - Do NOT invent tables or columns.
+   - CRITICAL: All table access MUST use read_parquet() syntax:
+       read_parquet('sql-agent/data/teams.parquet')
+       read_parquet('sql-agent/data/players.parquet')
+       read_parquet('sql-agent/data/player_game_stats.parquet')
+       read_parquet('sql-agent/data/team_game_stats.parquet')
 
 2. SQL must be READ-ONLY:
    - Only SELECT or WITH ... SELECT queries are allowed.
@@ -597,26 +584,24 @@ SQL RULES
      - Aggregate stats for a player over a season.
 
 4. Player identity resolution (CRITICAL):
-   - For each relevant player mention you’re querying:
+   - For each relevant player mention you're querying:
        name_to_match = normalized or original as defined above.
 
    - Your FIRST step for a player should be a name-resolution query:
-       - Use players.display_name and optionally player_aliases.alias.
-       - Use pg_trgm functions:
-           similarity(col, name_to_match)
-           col % name_to_match
-       - DO NOT use LIKE or ILIKE for name matching.
+       - Use players.display_name with ILIKE for case-insensitive matching.
+       - Example:
+           SELECT gsis_id, display_name
+           FROM read_parquet('sql-agent/data/players.parquet')
+           WHERE display_name ILIKE '%Brady%'
+           LIMIT 10;
        - Always LIMIT name-resolution queries (e.g. LIMIT 10).
 
    - That query should return at least:
        - players.gsis_id
        - players.display_name
-       - (optionally) player_aliases.alias
-       - a similarity score
 
    - Exact match definition:
        LOWER(players.display_name) = LOWER(name_to_match)
-       OR LOWER(player_aliases.alias) = LOWER(name_to_match)
 
    - If an exact match exists:
        - Use that player as the resolved identity.
@@ -642,7 +627,7 @@ SQL RULES
 
    - Example pattern (for a player):
        SELECT 1
-       FROM player_game_stats
+       FROM read_parquet('sql-agent/data/player_game_stats.parquet')
        WHERE player_id = '<resolved gsis_id>'
          AND season = <season_of_interest>
        LIMIT 1;
@@ -676,7 +661,7 @@ Your response MUST be exactly one of the following JSON objects:
 }
 
 - "thought" MUST be a short, single-paragraph string.
-- "sql" MUST be a single, syntactically valid PostgreSQL SELECT/WITH query.
+- "sql" MUST be a single, syntactically valid DuckDB SELECT/WITH query using read_parquet().
 - Do NOT put explanations outside of "thought".
 - Do NOT add extra keys.
 
@@ -742,38 +727,22 @@ Here is the database schema the SQL must use:
       "jersey_number": "SMALLINT",
       "rookie_season": "SMALLINT",
       "last_season": "SMALLINT",
-      "latest_team_id": "INTEGER",
+      "latest_team": "VARCHAR(10)",
       "status": "VARCHAR(20)",
       "years_of_experience": "SMALLINT",
       "draft_year": "SMALLINT",
       "draft_round": "SMALLINT",
       "draft_pick": "SMALLINT",
-      "draft_team_id": "INTEGER"
+      "draft_team": "VARCHAR(10)"
     },
     "fks": {
-      "latest_team_id": "teams.id",
-      "draft_team_id": "teams.id"
+      "latest_team": "teams.team_abbr",
+      "draft_team": "teams.team_abbr"
     },
     "unique": [
       ["nfl_id"],
       ["pfr_id"],
       ["espn_id"]
-    ]
-  },
-
-  "player_aliases": {
-    "pk": ["alias_id"],
-    "columns": {
-      "alias_id": "INT",
-      "player_id": "TEXT",
-      "alias": "TEXT",
-      "created_at": "TIMESTAMP"
-    },
-    "fks": {
-      "player_id": "players.gsis_id"
-    },
-    "unique": [
-      ["player_id", "alias"]
     ]
   },
   "team_game_stats": {
@@ -784,8 +753,8 @@ Here is the database schema the SQL must use:
         "season": "SMALLINT",
         "week": "SMALLINT",
         "game_type": "TEXT (values: 'REG','POST','PRE')",
-        "team_id": "INTEGER",
-        "opponent_team_id": "INTEGER",
+        "team_id": "VARCHAR(10)",
+        "opponent_team_id": "VARCHAR(10)",
         "home_away": "TEXT (values: 'HOME','AWAY')",
 
         "points_for": "INTEGER",
@@ -923,8 +892,8 @@ Here is the database schema the SQL must use:
         "created_at": "TIMESTAMPTZ"
     },
     "fks": {
-        "team_id": "teams.id",
-        "opponent_team_id": "teams.id"
+        "team_id": "teams.team_abbr",
+        "opponent_team_id": "teams.team_abbr"
     },
     "unique": [
         ["team_id", "game_id"]
@@ -938,8 +907,8 @@ Here is the database schema the SQL must use:
       "game_id": "TEXT",
       "season": "SMALLINT",
       "week": "SMALLINT",
-      "team_id": "INTEGER",
-      "opponent_team_id": "INTEGER",
+      "team_id": "VARCHAR(10)",
+      "opponent_team_id": "VARCHAR(10)",
       "home_away": "TEXT (values: 'HOME','AWAY')",
       "game_type": "TEXT (values: 'REG','POST','PRE')",
       "snaps_offense": "INTEGER",
@@ -992,8 +961,8 @@ Here is the database schema the SQL must use:
     },
     "fks": {
       "player_id": "players.gsis_id",
-      "team_id": "teams.id",
-      "opponent_team_id": "teams.id"
+      "team_id": "teams.team_abbr",
+      "opponent_team_id": "teams.team_abbr"
     },
     "unique": [
       ["player_id", "game_id"]
